@@ -4,35 +4,24 @@ This module recreates the logic from ``yt_downloader.bat`` but provides a
 Tkinter-based user interface so that end users can paste a YouTube URL and
 kick off the process with a single button.
 
-The application keeps the smart dynamic bitrate calculation from the batch
-file, assumes a constant 320 kbps AAC audio track and the ``slow`` x264 preset,
-and streams progress information into a log window.  The heavy lifting is still
+The UI exposes the configurable parameters that existed in the batch file
+(``ROOT``, ``MODE``, ``FIXED_VBIT``, ``AUDIO_BIT`` and ``X264_PRESET``) and
+streams progress information into a log window.  The heavy lifting is still
 done by the command line utilities ``yt-dlp``, ``ffprobe`` and ``ffmpeg`` –
 this script simply orchestrates them in Python instead of a batch file.
 """
 
 from __future__ import annotations
 
-import io
 import datetime as _dt
-import json
 import queue
-import shutil
 import subprocess
 import threading
-import urllib.request
 from pathlib import Path
 from typing import Optional
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
-
-try:  # Optional dependency – thumbnails require Pillow for JPEG support.
-    from PIL import Image, ImageTk  # type: ignore
-
-    PIL_AVAILABLE = True
-except Exception:  # pragma: no cover - Pillow is optional at runtime.
-    PIL_AVAILABLE = False
 
 
 # ----- Worker implementation -------------------------------------------------
@@ -50,20 +39,24 @@ class DownloadWorker(threading.Thread):
         *,
         url: str,
         root: Path,
-        title: Optional[str],
+        mode: str,
+        fixed_vbit: str,
+        audio_bit: str,
+        x264_preset: str,
         log_queue: "queue.Queue[str]",
     ) -> None:
         super().__init__(daemon=True)
         self.url = url.strip()
         self.root = root
-        self.title = title
+        self.mode = mode.upper()
+        self.fixed_vbit = fixed_vbit
+        self.audio_bit = audio_bit
+        self.x264_preset = x264_preset
         self.log_queue = log_queue
         self.error: Optional[str] = None
 
     # pylint: disable=too-many-locals
     def run(self) -> None:  # noqa: C901 - mirrors batch workflow for clarity
-        workdir: Optional[Path] = None
-        tempdir: Optional[Path] = None
         try:
             if not self.url:
                 raise ValueError("Порожній URL.")
@@ -76,11 +69,6 @@ class DownloadWorker(threading.Thread):
             tempdir = workdir / "temp"
             tempdir.mkdir(parents=True, exist_ok=True)
             self._log(f"[INFO] Робоча папка: {workdir}")
-
-            meta = self._ensure_metadata()
-            title = meta.get("title") or "video"
-            sanitized_title = _sanitize_filename(title)
-            self._log(f"[INFO] Назва: {title}")
 
             # Step 1: yt-dlp download
             self._log("[1/4] Завантаження...")
@@ -116,13 +104,13 @@ class DownloadWorker(threading.Thread):
             video_codec, audio_codec = self._probe_codecs(src)
             self._log(f"[2/4] Відео: {video_codec}   Аудіо: {audio_codec}")
 
-            final_path = workdir / f"{sanitized_title}.mp4"
             if video_codec.lower() == "h264" and audio_codec.lower() == "aac":
                 self._log(
-                    "[INFO] Уже H.264+AAC. Перейменовую без перекодування."
+                    "[INFO] Уже H.264+AAC. Перейменовую у video.mp4 без перекодування."
                 )
-                src.rename(final_path)
-                self._log(f"[DONE] {final_path}")
+                dest = src.with_name("video.mp4")
+                src.rename(dest)
+                self._log(f"[DONE] {dest}")
                 return
 
             vbit = self._compute_vbit(src)
@@ -140,7 +128,7 @@ class DownloadWorker(threading.Thread):
                     "-c:v",
                     "libx264",
                     "-preset",
-                    "slow",
+                    self.x264_preset,
                     "-pix_fmt",
                     "yuv420p",
                     "-b:v",
@@ -156,30 +144,23 @@ class DownloadWorker(threading.Thread):
                     "-c:a",
                     "aac",
                     "-b:a",
-                    "320k",
+                    self.audio_bit,
                     "-movflags",
                     "+faststart",
-                    final_path.name,
+                    "video.mp4",
                 ],
                 cwd=workdir,
             )
 
-            self._log(f"[DONE] {final_path}")
+            self._log(f"[DONE] {workdir / 'video.mp4'}")
         except Exception as exc:  # pylint: disable=broad-except
             self.error = str(exc)
             self._log(f"[ERROR] {self.error}")
-        finally:
-            if workdir is not None:
-                try:
-                    leftover = next(workdir.glob("source.*"), None)
-                    if leftover and leftover.exists():
-                        leftover.unlink()
-                except Exception:
-                    pass
-            if tempdir is not None:
-                shutil.rmtree(tempdir, ignore_errors=True)
 
     def _compute_vbit(self, src: Path) -> str:
+        if self.mode != "DYNAMIC":
+            return self.fixed_vbit
+
         # Derive duration (seconds) and file size (bytes) to estimate bitrate
         duration = self._run(
             [
@@ -209,24 +190,6 @@ class DownloadWorker(threading.Thread):
         headroom = int(video * 1.15)
         mbit = max((headroom + 999_999) // 1_000_000, 4)
         return f"{mbit}M"
-
-    def _ensure_metadata(self) -> dict[str, str]:
-        if self.title:
-            return {"title": self.title}
-
-        output = self._run(
-            [
-                "yt-dlp",
-                "--dump-single-json",
-                "--skip-download",
-                self.url,
-            ],
-            capture_output=True,
-        )
-        try:
-            return json.loads(output)
-        except json.JSONDecodeError:
-            return {"title": "video"}
 
     def _probe_codecs(self, src: Path) -> tuple[str, str]:
         output = self._run(
@@ -287,18 +250,6 @@ class DownloadWorker(threading.Thread):
         self.log_queue.put(message)
 
 
-# ----- Helpers ----------------------------------------------------------------
-
-
-def _sanitize_filename(title: str) -> str:
-    invalid = set('<>:"/\\|?*')
-    cleaned = ["_" if ch in invalid or ord(ch) < 32 else ch for ch in title]
-    sanitized = "".join(cleaned).strip().rstrip(". ")
-    if not sanitized:
-        sanitized = "video"
-    return sanitized
-
-
 # ----- Tkinter user interface ------------------------------------------------
 
 
@@ -306,14 +257,10 @@ class DownloaderUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("YouTube Downloader")
-        self.geometry("700x520")
+        self.geometry("640x480")
 
         self.log_queue: "queue.Queue[str]" = queue.Queue()
         self.worker: Optional[DownloadWorker] = None
-        self.preview_job: Optional[str] = None
-        self.preview_fetch_in_progress = False
-        self.preview_info: dict[str, str] = {}
-        self.thumbnail_image: Optional["ImageTk.PhotoImage"] = None
 
         # URL input
         tk.Label(self, text="YouTube URL").grid(row=0, column=0, sticky="w", padx=5, pady=5)
@@ -321,11 +268,10 @@ class DownloaderUI(tk.Tk):
         tk.Entry(self, textvariable=self.url_var, width=60).grid(
             row=0, column=1, columnspan=3, sticky="we", padx=5, pady=5
         )
-        self.url_var.trace_add("write", self._on_url_change)
 
         # Root directory selection
         tk.Label(self, text="Root folder").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.root_var = tk.StringVar(value="D:/YouTube")
+        self.root_var = tk.StringVar(value=str(Path.home()))
         tk.Entry(self, textvariable=self.root_var, width=40).grid(
             row=1, column=1, sticky="we", padx=5, pady=5
         )
@@ -333,45 +279,49 @@ class DownloaderUI(tk.Tk):
             row=1, column=2, sticky="w", padx=5, pady=5
         )
 
-        # Preview frame
-        preview_frame = tk.LabelFrame(self, text="Попередній перегляд")
-        preview_frame.grid(row=2, column=0, columnspan=4, sticky="we", padx=5, pady=10)
+        # Mode radio buttons
+        tk.Label(self, text="Mode").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.mode_var = tk.StringVar(value="DYNAMIC")
+        tk.Radiobutton(self, text="Dynamic", variable=self.mode_var, value="DYNAMIC").grid(
+            row=2, column=1, sticky="w", padx=5
+        )
+        tk.Radiobutton(self, text="Fixed", variable=self.mode_var, value="FIXED").grid(
+            row=2, column=2, sticky="w", padx=5
+        )
 
-        self.preview_title_var = tk.StringVar(value="Назва: —")
-        tk.Label(
-            preview_frame,
-            textvariable=self.preview_title_var,
-            anchor="w",
-            justify="left",
-            wraplength=500,
-        ).pack(fill="x", padx=10, pady=(8, 4))
+        # Bitrate and preset configuration
+        tk.Label(self, text="Fixed video bitrate (e.g. 50M)").grid(
+            row=3, column=0, sticky="w", padx=5, pady=5
+        )
+        self.fixed_vbit_var = tk.StringVar(value="50M")
+        tk.Entry(self, textvariable=self.fixed_vbit_var).grid(
+            row=3, column=1, sticky="we", padx=5, pady=5
+        )
 
-        if PIL_AVAILABLE:
-            self.preview_image_label = tk.Label(preview_frame)
-        else:
-            self.preview_image_label = tk.Label(
-                preview_frame,
-                text="Щоб бачити обкладинку, встановіть пакет Pillow",
-            )
-        self.preview_image_label.pack(padx=10, pady=5)
+        tk.Label(self, text="Audio bitrate").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        self.audio_bit_var = tk.StringVar(value="320k")
+        tk.Entry(self, textvariable=self.audio_bit_var).grid(
+            row=4, column=1, sticky="we", padx=5, pady=5
+        )
 
-        self.preview_status_var = tk.StringVar(value="")
-        tk.Label(preview_frame, textvariable=self.preview_status_var, fg="#666").pack(
-            fill="x", padx=10, pady=(0, 8)
+        tk.Label(self, text="x264 preset").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+        self.x264_preset_var = tk.StringVar(value="slow")
+        tk.Entry(self, textvariable=self.x264_preset_var).grid(
+            row=5, column=1, sticky="we", padx=5, pady=5
         )
 
         # Start button
         tk.Button(self, text="Start", command=self._start_worker).grid(
-            row=3, column=0, columnspan=3, pady=10
+            row=6, column=0, columnspan=3, pady=10
         )
 
         # Log output
         self.log_widget = scrolledtext.ScrolledText(self, state="disabled")
-        self.log_widget.grid(row=4, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
+        self.log_widget.grid(row=7, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
 
         # Configure resizing behaviour
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(4, weight=1)
+        self.grid_rowconfigure(7, weight=1)
 
         self.after(200, self._poll_queue)
 
@@ -397,108 +347,13 @@ class DownloaderUI(tk.Tk):
         self.worker = DownloadWorker(
             url=self.url_var.get(),
             root=root_path,
-            title=self.preview_info.get("title"),
+            mode=self.mode_var.get(),
+            fixed_vbit=self.fixed_vbit_var.get(),
+            audio_bit=self.audio_bit_var.get(),
+            x264_preset=self.x264_preset_var.get(),
             log_queue=self.log_queue,
         )
         self.worker.start()
-
-    def _on_url_change(self, *_: object) -> None:
-        url = self.url_var.get().strip()
-        if self.preview_job:
-            self.after_cancel(self.preview_job)
-            self.preview_job = None
-
-        if not url:
-            self._clear_preview()
-            return
-
-        self.preview_status_var.set("Завантаження даних…")
-        self.preview_job = self.after(600, lambda: self._start_preview_fetch(url))
-
-    def _start_preview_fetch(self, url: str) -> None:
-        if self.preview_fetch_in_progress:
-            return
-
-        self.preview_fetch_in_progress = True
-
-        def worker() -> None:
-            try:
-                output = subprocess.run(  # noqa: S603
-                    [
-                        "yt-dlp",
-                        "--dump-single-json",
-                        "--skip-download",
-                        url,
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                ).stdout
-                data = json.loads(output)
-                title = data.get("title") or "—"
-                thumbnail_url = data.get("thumbnail")
-                image = None
-                if thumbnail_url and PIL_AVAILABLE:
-                    try:
-                        with urllib.request.urlopen(thumbnail_url, timeout=10) as response:
-                            payload = response.read()
-                        pil_image = Image.open(io.BytesIO(payload))
-                        pil_image.thumbnail((480, 270))
-                        image = ImageTk.PhotoImage(pil_image)
-                    except Exception:
-                        image = None
-                self.after(0, lambda: self._apply_preview(title, thumbnail_url, image))
-            except Exception as exc:  # pylint: disable=broad-except
-                self.after(0, lambda: self._preview_error(str(exc)))
-            finally:
-                self.after(0, self._preview_fetch_done)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _preview_fetch_done(self) -> None:
-        self.preview_fetch_in_progress = False
-
-    def _apply_preview(
-        self,
-        title: str,
-        thumbnail_url: Optional[str],
-        image: Optional["ImageTk.PhotoImage"],
-    ) -> None:
-        self.preview_info = {"title": title, "thumbnail": thumbnail_url or ""}
-        self.preview_title_var.set(f"Назва: {title}")
-        if PIL_AVAILABLE and image is not None:
-            self.thumbnail_image = image
-            self.preview_image_label.configure(image=image, text="")
-        elif not PIL_AVAILABLE and thumbnail_url:
-            self.preview_image_label.configure(
-                text="Обкладинка недоступна без пакета Pillow",
-                image="",
-            )
-            self.thumbnail_image = None
-        else:
-            self.preview_image_label.configure(text="", image="")
-            self.thumbnail_image = None
-        self.preview_status_var.set("Готово")
-
-    def _preview_error(self, message: str) -> None:
-        self.preview_info = {}
-        self.preview_title_var.set("Назва: —")
-        self.preview_image_label.configure(text="Не вдалося завантажити прев’ю", image="")
-        self.thumbnail_image = None
-        self.preview_status_var.set(message)
-
-    def _clear_preview(self) -> None:
-        self.preview_info = {}
-        self.preview_title_var.set("Назва: —")
-        if PIL_AVAILABLE:
-            self.preview_image_label.configure(text="", image="")
-        else:
-            self.preview_image_label.configure(
-                text="Щоб бачити обкладинку, встановіть пакет Pillow",
-                image="",
-            )
-        self.thumbnail_image = None
-        self.preview_status_var.set("")
 
     def _poll_queue(self) -> None:
         try:
