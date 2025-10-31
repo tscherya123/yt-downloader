@@ -1487,7 +1487,10 @@ class DownloaderUI(tk.Tk):
         self.style.map(
             "TCombobox",
             fieldbackground=[("readonly", colors["entry_bg"])],
-            foreground=[("disabled", colors["disabled_fg"])],
+            foreground=[
+                ("readonly", colors["text"]),
+                ("disabled", colors["disabled_fg"]),
+            ],
         )
         self.style.configure(
             "TEntry",
@@ -1503,10 +1506,15 @@ class DownloaderUI(tk.Tk):
             ],
             foreground=[("disabled", colors["disabled_fg"])],
         )
-        self.option_add("*TCombobox*Listbox*Background", colors["entry_bg"])
-        self.option_add("*TCombobox*Listbox*Foreground", colors["text"])
-        self.option_add("*TCombobox*Listbox*selectBackground", colors["button_active_bg"])
-        self.option_add("*TCombobox*Listbox*selectForeground", colors["text"])
+        listbox_colors = {
+            "background": colors["entry_bg"],
+            "foreground": colors["text"],
+            "selectBackground": colors["button_active_bg"],
+            "selectForeground": colors["text"],
+        }
+        for option, value in listbox_colors.items():
+            self.option_add(f"*TCombobox*Listbox.{option}", value)
+            self.option_add(f"*TCombobox*Listbox*{option}", value)
         self.option_add("*TCombobox*Foreground", colors["text"])
 
         scrollbar_colors = {
