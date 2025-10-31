@@ -347,28 +347,45 @@ class DownloadWorker(threading.Thread):
                     human_end = self._t("segment_end")
                 self._log(self._t("log_segment", start=human_start, end=human_end))
 
+            clip_requested = self.start_seconds > 0 or self.end_seconds is not None
+            downloader_args: list[str] = []
+            clip_applied_during_download = False
+            if clip_requested:
+                clip_parts: list[str] = []
+                if self.start_seconds > 0:
+                    clip_parts.append(f"-ss {_format_timestamp(self.start_seconds)}")
+                if self.end_seconds is not None:
+                    clip_parts.append(f"-to {_format_timestamp(self.end_seconds)}")
+                if clip_parts:
+                    downloader_args = [
+                        "--downloader",
+                        "ffmpeg",
+                        "--downloader-args",
+                        f"ffmpeg_i:{' '.join(clip_parts)}",
+                    ]
+                    clip_applied_during_download = True
+
             # Крок 1: завантаження через yt-dlp
             self._log(self._t("log_download_step"))
-            self._run(
-                [
-                    "yt-dlp",
-                    "-f",
-                    "bv*+ba/b",
-                    "-S",
-                    "res,fps,br",
-                    "--hls-prefer-ffmpeg",
-                    "-N",
-                    "8",
-                    "-P",
-                    str(workdir),
-                    "--paths",
-                    f"temp:{tempdir}",
-                    "-o",
-                    "source.%(ext)s",
-                    self.url,
-                ],
-                cwd=workdir,
-            )
+            yt_dlp_cmd = [
+                "yt-dlp",
+                "-f",
+                "bv*+ba/b",
+                "-S",
+                "res,fps,br",
+                "--hls-prefer-ffmpeg",
+                "-N",
+                "8",
+                "-P",
+                str(workdir),
+                "--paths",
+                f"temp:{tempdir}",
+                "-o",
+                "source.%(ext)s",
+            ]
+            yt_dlp_cmd.extend(downloader_args)
+            yt_dlp_cmd.append(self.url)
+            self._run(yt_dlp_cmd, cwd=workdir)
 
             template_placeholder = workdir / "source.%(ext)s"
             template_placeholder.unlink(missing_ok=True)
@@ -381,22 +398,25 @@ class DownloadWorker(threading.Thread):
             self._log(self._t("log_codecs", video=video_codec, audio=audio_codec))
 
             final_path = workdir / f"{sanitized_title}.mp4"
-            clip_requested = self.start_seconds > 0 or self.end_seconds is not None
             needs_transcode = not (
                 video_codec.lower() == "h264" and audio_codec.lower() == "aac"
             )
 
-            if not needs_transcode and not clip_requested:
+            if not needs_transcode and not clip_applied_during_download:
                 self._log(self._t("log_skip_transcode"))
                 src.rename(final_path)
                 final_destination = final_path
             else:
                 self._status("converting")
                 ffmpeg_args = ["ffmpeg", "-hide_banner", "-stats", "-y"]
-                if clip_requested:
+                clip_during_ffmpeg = (
+                    (self.start_seconds > 0 or self.end_seconds is not None)
+                    and not clip_applied_during_download
+                )
+                if clip_during_ffmpeg:
                     ffmpeg_args.extend(["-ss", _format_timestamp(self.start_seconds)])
                 ffmpeg_args.extend(["-i", str(src)])
-                if clip_requested and self.end_seconds is not None:
+                if clip_during_ffmpeg and self.end_seconds is not None:
                     segment = max(self.end_seconds - self.start_seconds, 0.0)
                     ffmpeg_args.extend(["-t", _format_timestamp(segment)])
 
