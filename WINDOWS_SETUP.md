@@ -49,7 +49,7 @@ cd D:\
 git clone https://github.com/<your-account>/yt-downloader.git
 ```
 
-The repository now ships with a Tkinter interface instead of the legacy batch script.  Refer to [README.md](README.md) for a project overview and usage tips.
+> If you already have the files, ensure `ui.py` and `yt_downloader.bat` reside in the same directory.
 
 ## 6. Run the UI
 From PowerShell:
