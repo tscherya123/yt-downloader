@@ -17,18 +17,42 @@
 - [`ffmpeg`](https://ffmpeg.org/) – забезпечує інструменти `ffmpeg` та `ffprobe` для перекодування і аналізу медіа.
 - Опційно: [`Pillow`](https://python-pillow.org/) – дозволяє відображати обкладинки у форматах JPEG/WebP.
 
-### Кроки для Windows
-1. Встановіть [Python 3.10+](https://www.python.org/downloads/windows/) та перевірте `python --version` у PowerShell.
-2. Оновіть або встановіть `yt-dlp`:
+### Детальна інструкція для Windows
+1. **Встановіть [Python 3.10+](https://www.python.org/downloads/windows/).** Під час інсталяції поставте прапорець **Add Python to PATH** на першому екрані та завершіть установку зі стандартними параметрами. Якщо Python уже інстальовано, перевірте доступність команди:
+   ```powershell
+   python --version
+   ```
+2. **Додайте `yt-dlp`.** Ця утиліта відповідає за завантаження відео:
    ```powershell
    python -m pip install --upgrade yt-dlp
    ```
-3. Завантажте **release full build** FFmpeg з [gyan.dev](https://www.gyan.dev/ffmpeg/builds/), розпакуйте до `C:\ffmpeg` та додайте `C:\ffmpeg\bin` до системної змінної PATH.
-4. (Опційно) Встановіть `Pillow` для відображення обкладинок:
+3. **Підготуйте FFmpeg (містить `ffmpeg` і `ffprobe`).**
+   1. Завантажте останню **release full build** з [https://www.gyan.dev/ffmpeg/builds/](https://www.gyan.dev/ffmpeg/builds/).
+   2. Розпакуйте архів (наприклад, `ffmpeg-*-full_build.7z`) до `C:\ffmpeg`.
+   3. Додайте `C:\ffmpeg\bin` до системної змінної PATH: **Settings → System → About → Advanced system settings → Environment Variables… → Path → Edit → New**.
+   4. Відкрийте нове вікно PowerShell і переконайтеся, що команди доступні:
+      ```powershell
+      ffmpeg -version
+      ffprobe -version
+      ```
+4. **(Опційно) Встановіть додаткові бібліотеки.**
+   - Для відображення обкладинок: `python -m pip install Pillow`
+   - Для Windows-розширень: `python -m pip install pywin32`
+5. **Отримайте файли застосунку.** Клонуйте або скопіюйте репозиторій у зручну теку, наприклад:
    ```powershell
-   python -m pip install Pillow
+   cd D:\
+   git clone https://github.com/<your-account>/yt-downloader.git
    ```
-5. Клонуйте або розпакуйте репозиторій у зручну теку, наприклад `D:\YouTube`.
+6. **Запустіть інтерфейс.** У каталозі проєкту виконайте:
+   ```powershell
+   cd D:\YouTube\yt-downloader
+   start_ui.bat
+   ```
+   Альтернатива – запустити `python ui.py`. Під час першого старту оберіть теку для збереження файлів (типово – «Завантаження» вашого профілю).
+7. **Усунення поширених проблем.**
+   - Помилки **Command not found** свідчать про відсутність запису у PATH – перевірте кроки 1 і 3.
+   - Після зміни змінних середовища перезапустіть PowerShell.
+   - За потреби прав адміністратора запустіть PowerShell із підвищеними правами.
 
 ### macOS / Linux
 1. Встановіть Python 3.10+ з офіційного сайту або через пакетний менеджер.
