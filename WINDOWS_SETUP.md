@@ -1,69 +1,69 @@
-# Windows Installation Guide for YouTube Downloader UI
+# Посібник з установлення YouTube Downloader UI на Windows
 
-This application relies on a few external tools in addition to Python. Follow the steps below to prepare a Windows machine for running `ui.py`.
+Цей застосунок, окрім Python, використовує кілька зовнішніх утиліт. Дотримуйтеся наведених нижче кроків, щоб підготувати систему Windows до запуску `ui.py`.
 
-## 1. Install Python 3.10+
-1. Download the latest Python 3.10 (or newer) installer from [python.org](https://www.python.org/downloads/windows/).
-2. Run the installer and check **Add Python to PATH** on the first screen.
-3. Complete the installation using the default options.
+## 1. Встановіть Python 3.10+
+1. Завантажте останній інсталятор Python 3.10 (або новішої версії) з [python.org](https://www.python.org/downloads/windows/).
+2. Під час встановлення поставте прапорець **Add Python to PATH** на першому екрані.
+3. Завершіть інсталяцію, залишивши налаштування за замовчуванням.
 
-> If Python is already installed, ensure `python` is available from PowerShell by running:
+> Якщо Python уже встановлено, переконайтеся, що команда `python` доступна у PowerShell, виконавши:
 >
 > ```powershell
 > python --version
 > ```
 
-## 2. Install `yt-dlp`
-`yt-dlp` performs the actual video downloads.
+## 2. Встановіть `yt-dlp`
+`yt-dlp` відповідає за безпосереднє завантаження відео.
 
 ```powershell
 python -m pip install --upgrade yt-dlp
 ```
 
-## 3. Install FFmpeg (includes `ffmpeg` and `ffprobe`)
-1. Download the latest **release full build** from [https://www.gyan.dev/ffmpeg/builds/](https://www.gyan.dev/ffmpeg/builds/).
-2. Extract the archive (e.g., `ffmpeg-*-full_build.7z`) to `C:\ffmpeg`.
-3. Add `C:\ffmpeg\bin` to the system PATH:
-   - Open **Settings → System → About → Advanced system settings**.
-   - Click **Environment Variables…**.
-   - Under **System variables**, select **Path** → **Edit** → **New** and enter `C:\ffmpeg\bin`.
-4. Open a new PowerShell window and verify:
+## 3. Встановіть FFmpeg (містить `ffmpeg` та `ffprobe`)
+1. Завантажте останню **release full build** з [https://www.gyan.dev/ffmpeg/builds/](https://www.gyan.dev/ffmpeg/builds/).
+2. Розпакуйте архів (наприклад, `ffmpeg-*-full_build.7z`) до `C:\ffmpeg`.
+3. Додайте `C:\ffmpeg\bin` до системної змінної PATH:
+   - Відкрийте **Settings → System → About → Advanced system settings**.
+   - Натисніть **Environment Variables…**.
+   - У розділі **System variables** оберіть **Path** → **Edit** → **New** та вкажіть `C:\ffmpeg\bin`.
+4. Відкрийте нове вікно PowerShell і перевірте:
 
 ```powershell
 ffmpeg -version
 ffprobe -version
 ```
 
-## 4. (Optional) Install `pywin32`
-If you plan to use Windows-specific features in future extensions, install:
+## 4. (Опційно) Встановіть `pywin32`
+Якщо плануєте розширювати застосунок Windows-специфічними функціями, виконайте:
 
 ```powershell
 python -m pip install pywin32
 ```
 
-## 5. Obtain the Application Files
-Clone or copy the repository into a convenient location, for example `D:\YouTube`.
+## 5. Отримайте файли застосунку
+Клонуйте або скопіюйте репозиторій у зручну теку, наприклад `D:\YouTube`.
 
 ```powershell
 cd D:\
 git clone https://github.com/<your-account>/yt-downloader.git
 ```
 
-> If you already have the files, ensure `ui.py` and `yt_downloader.bat` reside in the same directory.
+Тепер у репозиторії постачається інтерфейс Tkinter замість застарілого пакетного скрипта. Докладніший опис та підказки шукайте в [README.md](README.md).
 
-## 6. Run the UI
-From PowerShell:
+## 6. Запустіть інтерфейс
+У PowerShell виконайте:
 
 ```powershell
 cd D:\YouTube
 python ui.py
 ```
 
-If everything is configured correctly, the Tkinter interface will open and allow you to queue downloads.
+Якщо налаштування виконано правильно, відкриється графічний інтерфейс, у якому можна додавати завдання у чергу.
 
-## 7. Troubleshooting
-- **Command not found** errors typically indicate a missing PATH entry. Revisit steps 1 and 3.
-- Make sure PowerShell is restarted after changing environment variables.
-- For permission issues, launch PowerShell as Administrator.
+## 7. Усунення проблем
+- Повідомлення **Command not found** зазвичай означають, що у PATH бракує запису. Поверніться до кроків 1 та 3.
+- Після зміни змінних середовища перезапустіть PowerShell.
+- За проблем із правами запустіть PowerShell від імені адміністратора.
 
-With these dependencies installed, the application is ready to download and transcode YouTube videos on Windows.
+Після встановлення всіх залежностей застосунок готовий завантажувати й перекодовувати відео з YouTube у середовищі Windows.
