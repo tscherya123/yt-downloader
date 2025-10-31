@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import io
-import os
 import sys
 import datetime as _dt
 import json
@@ -33,10 +32,10 @@ except Exception:  # pragma: no cover - Pillow необов'язковий пі�
     PIL_AVAILABLE = False
 
 
-# ----- Worker implementation -------------------------------------------------
+# ----- Реалізація робітника -------------------------------------------------
 
 class DownloadWorker(threading.Thread):
-    """Thread that runs the download/transcode workflow."""
+    """Потік, що виконує повний цикл завантаження й перекодування."""
 
     def __init__(
         self,
@@ -62,7 +61,7 @@ class DownloadWorker(threading.Thread):
         self.error: Optional[str] = None
 
     # pylint: disable=too-many-locals
-    def run(self) -> None:  # noqa: C901 - mirrors batch workflow for clarity
+    def run(self) -> None:  # noqa: C901 - відтворюємо логіку батника для прозорості
         workdir: Optional[Path] = None
         tempdir: Optional[Path] = None
         final_destination: Optional[Path] = None
@@ -97,7 +96,7 @@ class DownloadWorker(threading.Thread):
                     human_end = "кінець"
                 self._log(f"[INFO] Відрізок: {human_start} – {human_end}")
 
-            # Step 1: yt-dlp download
+            # Крок 1: завантаження через yt-dlp
             self._log("[1/4] Завантаження...")
             self._run(
                 [
@@ -232,7 +231,7 @@ class DownloadWorker(threading.Thread):
                 shutil.rmtree(workdir, ignore_errors=True)
 
     def _compute_vbit(self, src: Path) -> str:
-        # Derive duration (seconds) and file size (bytes) to estimate bitrate
+        # Обчислюємо тривалість (у секундах) і розмір файлу (у байтах), щоб оцінити бітрейт
         duration = self._run(
             [
                 "ffprobe",
@@ -255,7 +254,7 @@ class DownloadWorker(threading.Thread):
         file_size = src.stat().st_size
         total = int((file_size * 8) // dur_value)
 
-        # replicate batch arithmetic
+        # Повторюємо арифметику зі старого батника
         audio = 320_000
         video = max(800_000, total - audio)
         headroom = int(video * 1.15)
@@ -324,7 +323,7 @@ class DownloadWorker(threading.Thread):
         cwd: Optional[Path] = None,
         capture_output: bool = False,
     ) -> str:
-        process = subprocess.run(  # noqa: S603 - deliberate command execution
+        process = subprocess.run(  # noqa: S603 - свідоме виконання зовнішньої команди
             args,
             cwd=cwd,
             check=True,
@@ -347,7 +346,7 @@ class DownloadWorker(threading.Thread):
         self.event_queue.put(data)
 
 
-# ----- Helpers ----------------------------------------------------------------
+# ----- Допоміжні функції -----------------------------------------------------
 
 
 def _sanitize_filename(title: str) -> str:
@@ -371,10 +370,11 @@ def _format_timestamp(value: float) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def _shorten_title(title: str, limit: int = 48) -> str:
+def _shorten_title(title: str, limit: int = 40) -> str:
     if len(title) <= limit:
         return title
-    return title[: limit - 1] + "…"
+    cutoff = max(limit - 3, 1)
+    return title[:cutoff] + "..."
 
 
 def _parse_time_input(text: str) -> Optional[float]:
@@ -413,7 +413,7 @@ def _unique_path(candidate: Path) -> Path:
         counter += 1
 
 
-# ----- Tkinter user interface ------------------------------------------------
+# ----- Графічний інтерфейс Tkinter -----------------------------------------
 
 
 class TaskRow(ttk.Frame):
@@ -431,7 +431,10 @@ class TaskRow(ttk.Frame):
         self.display_title = _shorten_title(title)
         self.status_var = tk.StringVar(value="Статус: очікує")
         self.title_label = ttk.Label(
-            self, text=self.display_title, style="TaskTitle.TLabel"
+            self,
+            text=self.display_title,
+            style="TaskTitle.TLabel",
+            width=40,
         )
         self.status_label = ttk.Label(self, textvariable=self.status_var)
         self.open_button = ttk.Button(
@@ -525,7 +528,7 @@ class DownloaderUI(tk.Tk):
         )
         self.search_button.grid(row=0, column=2, sticky="e")
 
-        ttk.Label(left_frame, text="Root folder").grid(
+        ttk.Label(left_frame, text="Коренева тека").grid(
             row=1, column=0, sticky="w", pady=(12, 0)
         )
         self.root_var = tk.StringVar(value=self.initial_root)
@@ -598,14 +601,25 @@ class DownloaderUI(tk.Tk):
         queue_frame = ttk.LabelFrame(container, text="Черга завантажень")
         queue_frame.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
         queue_frame.columnconfigure(0, weight=1)
-        queue_frame.rowconfigure(0, weight=1)
+        queue_frame.rowconfigure(1, weight=1)
+
+        header_frame = ttk.Frame(queue_frame)
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 4))
+        header_frame.columnconfigure(0, weight=1)
+        self.clear_history_button = ttk.Button(
+            header_frame,
+            text="Очистити історію",
+            command=self._confirm_clear_history,
+            state="disabled",
+        )
+        self.clear_history_button.grid(row=0, column=1, sticky="e")
 
         self.tasks_canvas = tk.Canvas(queue_frame, highlightthickness=0)
-        self.tasks_canvas.grid(row=0, column=0, sticky="nsew")
+        self.tasks_canvas.grid(row=1, column=0, sticky="nsew")
         self.tasks_scroll = ttk.Scrollbar(
             queue_frame, orient="vertical", command=self.tasks_canvas.yview
         )
-        self.tasks_scroll.grid(row=0, column=1, sticky="ns")
+        self.tasks_scroll.grid(row=1, column=1, sticky="ns")
         self.tasks_canvas.configure(yscrollcommand=self.tasks_scroll.set)
         self.tasks_inner = ttk.Frame(self.tasks_canvas)
         self.tasks_inner.columnconfigure(0, weight=1)
@@ -631,6 +645,7 @@ class DownloaderUI(tk.Tk):
 
         self.after(200, self._poll_queue)
         self.after(300, self._ensure_root_folder)
+        self._update_clear_history_state()
 
     def _browse_root(self) -> None:
         directory = filedialog.askdirectory(
@@ -702,6 +717,7 @@ class DownloaderUI(tk.Tk):
         row_index = len(self.tasks)
         task_row.grid(row=row_index, column=0, sticky="ew", pady=(0, 10))
         self.tasks[task_id] = task_row
+        self._update_clear_history_state()
 
         clip_end_for_worker: Optional[float]
         if abs(end_seconds - duration) <= 1e-3:
@@ -768,7 +784,7 @@ class DownloaderUI(tk.Tk):
 
         def worker() -> None:
             try:
-                output = subprocess.run(  # noqa: S603
+                output = subprocess.run(  # noqa: S603 - виклик зовнішньої утиліти
                     [
                         "yt-dlp",
                         "--dump-single-json",
@@ -822,6 +838,10 @@ class DownloaderUI(tk.Tk):
     def _preview_fetch_done(self, _: int) -> None:
         self.preview_fetch_in_progress = False
         self.search_button.state(["!disabled"])
+        try:
+            self.search_button.configure(state=tk.NORMAL)
+        except tk.TclError:
+            pass
 
     def _apply_preview(
         self,
@@ -879,6 +899,15 @@ class DownloaderUI(tk.Tk):
         self.preview_status_var.set(message)
         self.download_button.state(["disabled"])
         self._set_clip_controls_enabled(False)
+        self.search_button.state(["!disabled"])
+        try:
+            self.search_button.configure(state=tk.NORMAL)
+        except tk.TclError:
+            pass
+        messagebox.showwarning(
+            "URL",
+            "Не вдалося отримати дані за цим посиланням. Перевірте, що це сторінка відео.",
+        )
 
     def _clear_preview(self) -> None:
         self.preview_info = {}
@@ -940,6 +969,45 @@ class DownloaderUI(tk.Tk):
         self.log_widget.insert("end", message + "\n")
         self.log_widget.see("end")
         self.log_widget.configure(state="disabled")
+
+    def _confirm_clear_history(self) -> None:
+        if any(worker.is_alive() for worker in self.workers.values()):
+            messagebox.showwarning(
+                "Історія",
+                "Спочатку дочекайтеся завершення всіх завантажень.",
+            )
+            return
+
+        if not self.tasks:
+            messagebox.showinfo("Історія", "Історія вже порожня.")
+            return
+
+        proceed = messagebox.askyesno(
+            "Очистити історію",
+            "Видалити всі записи зі списку? Файли залишаться на диску.",
+            icon="warning",
+        )
+        if not proceed:
+            return
+
+        for row in list(self.tasks.values()):
+            row.destroy()
+        self.tasks.clear()
+        bbox = self.tasks_canvas.bbox("all")
+        if bbox:
+            self.tasks_canvas.configure(scrollregion=bbox)
+        else:
+            self.tasks_canvas.configure(scrollregion=(0, 0, 0, 0))
+        self.tasks_canvas.yview_moveto(0)
+        self._update_clear_history_state()
+
+    def _update_clear_history_state(self) -> None:
+        if not hasattr(self, "clear_history_button"):
+            return
+        if self.tasks:
+            self.clear_history_button.state(["!disabled"])
+        else:
+            self.clear_history_button.state(["disabled"])
 
     def _set_clip_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -1010,12 +1078,18 @@ class DownloaderUI(tk.Tk):
         return None
 
     def _open_result_folder(self, path: Path) -> None:
+        if not path.exists():
+            messagebox.showerror(
+                "Папка",
+                "Файл не знайдено. Переконайтеся, що його не було переміщено або видалено.",
+            )
+            return
         folder = path.parent
         try:
             if sys.platform.startswith("win"):
-                os.startfile(folder)  # type: ignore[attr-defined]
+                subprocess.Popen(["explorer", "/select,", str(path)])
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(folder)], close_fds=True)
+                subprocess.Popen(["open", "-R", str(path)], close_fds=True)
             else:
                 subprocess.Popen(["xdg-open", str(folder)], close_fds=True)
         except Exception as exc:  # pylint: disable=broad-except
