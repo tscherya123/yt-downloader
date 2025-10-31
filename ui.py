@@ -1551,10 +1551,70 @@ class DownloaderUI(tk.Tk):
                 arrowcolor=[("active", colors["button_fg"])],
             )
 
+        dropdown_kwargs = {
+            "background": dropdown_bg,
+            "foreground": dropdown_fg,
+            "select_background": dropdown_select_bg,
+            "select_foreground": dropdown_select_fg,
+        }
+        if hasattr(self, "language_combo"):
+            self._style_combobox_dropdown(self.language_combo, **dropdown_kwargs)
+        if hasattr(self, "theme_combo"):
+            self._style_combobox_dropdown(self.theme_combo, **dropdown_kwargs)
+
         self.tasks_canvas.configure(background=colors["frame"], highlightthickness=0)
         self.preview_image_label.configure(bg=colors["frame"], fg=colors["text"])
         self.log_widget.configure(
             bg=colors["log_bg"], fg=colors["log_fg"], insertbackground=colors["log_fg"]
+        )
+
+    def _style_combobox_dropdown(
+        self,
+        combobox: ttk.Combobox,
+        *,
+        background: str,
+        foreground: str,
+        select_background: str,
+        select_foreground: str,
+    ) -> None:
+        try:
+            popdown = self.tk.call("ttk::combobox::PopdownWindow", str(combobox))
+        except tk.TclError:
+            return
+
+        try:
+            popdown_widget = self.nametowidget(popdown)
+            popdown_widget.configure(bg=background)
+        except (tk.TclError, KeyError):
+            popdown_widget = None
+
+        frame_path = f"{popdown}.f"
+        try:
+            frame_widget = self.nametowidget(frame_path)
+        except (tk.TclError, KeyError):
+            frame_widget = None
+
+        listbox_path = f"{frame_path}.l"
+        try:
+            listbox_widget = self.nametowidget(listbox_path)
+        except (tk.TclError, KeyError):
+            listbox_widget = None
+
+        if frame_widget is not None:
+            frame_widget.configure(bg=background)
+        if popdown_widget is not None:
+            popdown_widget.configure(bg=background)
+        if listbox_widget is None:
+            return
+
+        listbox_widget.configure(
+            background=background,
+            foreground=foreground,
+            selectbackground=select_background,
+            selectforeground=select_foreground,
+            highlightcolor=background,
+            highlightbackground=background,
+            activestyle="none",
         )
 
     def _store_language(self, code: str) -> None:
