@@ -245,6 +245,10 @@ THEMES: dict[str, dict[str, str]] = {
         "canvas_bg": "#ffffff",
         "log_bg": "#ffffff",
         "log_fg": "#202124",
+        "dropdown_bg": "#ffffff",
+        "dropdown_fg": "#202124",
+        "dropdown_select_bg": "#202124",
+        "dropdown_select_fg": "#f5f5f5",
     },
     "dark": {
         "background": "#121212",
@@ -259,6 +263,10 @@ THEMES: dict[str, dict[str, str]] = {
         "canvas_bg": "#1f1f1f",
         "log_bg": "#161616",
         "log_fg": "#f5f5f5",
+        "dropdown_bg": "#000000",
+        "dropdown_fg": "#f5f5f5",
+        "dropdown_select_bg": "#f4f4f8",
+        "dropdown_select_fg": "#202124",
     },
 }
 
@@ -744,12 +752,24 @@ class DownloaderUI(tk.Tk):
         self.minsize(1040, 700)
 
         self.style = ttk.Style(self)
+        available_themes = set(self.style.theme_names())
+        current_theme = self.style.theme_use()
+        preferred_light = "vista" if sys.platform.startswith("win") else "clam"
+        if preferred_light in available_themes:
+            self.light_base_theme = preferred_light
+        elif current_theme in available_themes:
+            self.light_base_theme = current_theme
+        else:
+            self.light_base_theme = "default"
+        self.dark_base_theme = "clam" if "clam" in available_themes else self.light_base_theme
         try:
-            self.base_theme = "vista" if sys.platform.startswith("win") else "clam"
-            self.style.theme_use(self.base_theme)
+            self.style.theme_use(self.light_base_theme)
+            self.current_base_theme = self.light_base_theme
         except tk.TclError:
-            self.base_theme = self.style.theme_use()
-            pass
+            # Якщо потрібний базовий стиль недоступний, запам'ятовуємо доступний варіант.
+            self.current_base_theme = current_theme
+            self.light_base_theme = current_theme
+            self.dark_base_theme = current_theme
         self.style.configure("TaskTitle.TLabel", font=("Segoe UI", 10, "bold"))
         self.option_add("*Font", ("Segoe UI", 10))
 
@@ -1428,7 +1448,18 @@ class DownloaderUI(tk.Tk):
     def _apply_theme(self) -> None:
         colors = THEMES.get(self.theme, THEMES[DEFAULT_THEME])
         self.configure(bg=colors["background"])
-        self.style.theme_use(self.base_theme)
+
+        desired_base_theme = (
+            self.light_base_theme if self.theme == "light" else self.dark_base_theme
+        )
+        if desired_base_theme != self.current_base_theme:
+            try:
+                self.style.theme_use(desired_base_theme)
+                self.current_base_theme = desired_base_theme
+            except tk.TclError:
+                # Якщо теми немає, залишаємось на попередній.
+                pass
+
         self.style.configure("TFrame", background=colors["frame"])
         self.style.configure("TLabelframe", background=colors["frame"], foreground=colors["text"])
         self.style.configure("TLabelframe.Label", background=colors["frame"], foreground=colors["text"])
@@ -1459,25 +1490,131 @@ class DownloaderUI(tk.Tk):
             fieldbackground=colors["entry_bg"],
             background=colors["frame"],
             foreground=colors["text"],
+            arrowcolor=colors["text"],
         )
         self.style.map(
             "TCombobox",
             fieldbackground=[("readonly", colors["entry_bg"])],
-            foreground=[("disabled", colors["disabled_fg"])],
+            foreground=[
+                ("readonly", colors["text"]),
+                ("disabled", colors["disabled_fg"]),
+            ],
         )
         self.style.configure(
             "TEntry",
             fieldbackground=colors["entry_bg"],
             foreground=colors["text"],
+            insertcolor=colors["text"],
         )
-        self.option_add("*TCombobox*Listbox*Background", colors["entry_bg"])
-        self.option_add("*TCombobox*Listbox*Foreground", colors["text"])
-        self.option_add("*TCombobox*Listbox*selectBackground", colors["button_active_bg"])
+        self.style.map(
+            "TEntry",
+            fieldbackground=[
+                ("readonly", colors["entry_bg"]),
+                ("disabled", colors["frame"]),
+            ],
+            foreground=[("disabled", colors["disabled_fg"])],
+        )
+        dropdown_bg = colors["dropdown_bg"]
+        dropdown_fg = colors["dropdown_fg"]
+        dropdown_select_bg = colors["dropdown_select_bg"]
+        dropdown_select_fg = colors["dropdown_select_fg"]
+        listbox_colors = {
+            "background": dropdown_bg,
+            "foreground": dropdown_fg,
+            "selectBackground": dropdown_select_bg,
+            "selectForeground": dropdown_select_fg,
+            "highlightColor": dropdown_bg,
+            "highlightBackground": dropdown_bg,
+            "borderColor": dropdown_bg,
+            "activeBackground": dropdown_select_bg,
+            "activeForeground": dropdown_select_fg,
+        }
+        for option, value in listbox_colors.items():
+            self.option_add(f"*TCombobox*Listbox.{option}", value)
+            self.option_add(f"*TCombobox*Listbox*{option}", value)
+        self.option_add("*TCombobox*Foreground", dropdown_fg)
+
+        scrollbar_colors = {
+            "background": colors["button_bg"],
+            "troughcolor": colors["frame"],
+            "arrowcolor": colors["button_fg"],
+            "bordercolor": colors["frame"],
+            "lightcolor": colors["frame"],
+            "darkcolor": colors["frame"],
+        }
+        for orientation in ("Vertical", "Horizontal"):
+            style_name = f"{orientation}.TScrollbar"
+            self.style.configure(style_name, **scrollbar_colors)
+            self.style.map(
+                style_name,
+                background=[("active", colors["button_active_bg"])],
+                arrowcolor=[("active", colors["button_fg"])],
+            )
+
+        dropdown_kwargs = {
+            "background": dropdown_bg,
+            "foreground": dropdown_fg,
+            "select_background": dropdown_select_bg,
+            "select_foreground": dropdown_select_fg,
+        }
+        if hasattr(self, "language_combo"):
+            self._style_combobox_dropdown(self.language_combo, **dropdown_kwargs)
+        if hasattr(self, "theme_combo"):
+            self._style_combobox_dropdown(self.theme_combo, **dropdown_kwargs)
 
         self.tasks_canvas.configure(background=colors["frame"], highlightthickness=0)
         self.preview_image_label.configure(bg=colors["frame"], fg=colors["text"])
         self.log_widget.configure(
             bg=colors["log_bg"], fg=colors["log_fg"], insertbackground=colors["log_fg"]
+        )
+
+    def _style_combobox_dropdown(
+        self,
+        combobox: ttk.Combobox,
+        *,
+        background: str,
+        foreground: str,
+        select_background: str,
+        select_foreground: str,
+    ) -> None:
+        try:
+            popdown = self.tk.call("ttk::combobox::PopdownWindow", str(combobox))
+        except tk.TclError:
+            return
+
+        try:
+            popdown_widget = self.nametowidget(popdown)
+            popdown_widget.configure(bg=background)
+        except (tk.TclError, KeyError):
+            popdown_widget = None
+
+        frame_path = f"{popdown}.f"
+        try:
+            frame_widget = self.nametowidget(frame_path)
+        except (tk.TclError, KeyError):
+            frame_widget = None
+
+        listbox_path = f"{frame_path}.l"
+        try:
+            listbox_widget = self.nametowidget(listbox_path)
+        except (tk.TclError, KeyError):
+            listbox_widget = None
+
+        if frame_widget is not None:
+            frame_widget.configure(bg=background)
+        if popdown_widget is not None:
+            popdown_widget.configure(bg=background)
+        if listbox_widget is None:
+            return
+
+        listbox_widget.configure(
+            background=background,
+            foreground=foreground,
+            selectbackground=select_background,
+            selectforeground=select_foreground,
+            highlightcolor=background,
+            highlightbackground=background,
+            activestyle="none",
         )
 
     def _store_language(self, code: str) -> None:
