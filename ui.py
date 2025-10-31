@@ -744,12 +744,24 @@ class DownloaderUI(tk.Tk):
         self.minsize(1040, 700)
 
         self.style = ttk.Style(self)
+        available_themes = set(self.style.theme_names())
+        current_theme = self.style.theme_use()
+        preferred_light = "vista" if sys.platform.startswith("win") else "clam"
+        if preferred_light in available_themes:
+            self.light_base_theme = preferred_light
+        elif current_theme in available_themes:
+            self.light_base_theme = current_theme
+        else:
+            self.light_base_theme = "default"
+        self.dark_base_theme = "clam" if "clam" in available_themes else self.light_base_theme
         try:
-            self.base_theme = "vista" if sys.platform.startswith("win") else "clam"
-            self.style.theme_use(self.base_theme)
+            self.style.theme_use(self.light_base_theme)
+            self.current_base_theme = self.light_base_theme
         except tk.TclError:
-            self.base_theme = self.style.theme_use()
-            pass
+            # Якщо потрібний базовий стиль недоступний, запам'ятовуємо доступний варіант.
+            self.current_base_theme = current_theme
+            self.light_base_theme = current_theme
+            self.dark_base_theme = current_theme
         self.style.configure("TaskTitle.TLabel", font=("Segoe UI", 10, "bold"))
         self.option_add("*Font", ("Segoe UI", 10))
 
@@ -1428,7 +1440,18 @@ class DownloaderUI(tk.Tk):
     def _apply_theme(self) -> None:
         colors = THEMES.get(self.theme, THEMES[DEFAULT_THEME])
         self.configure(bg=colors["background"])
-        self.style.theme_use(self.base_theme)
+
+        desired_base_theme = (
+            self.light_base_theme if self.theme == "light" else self.dark_base_theme
+        )
+        if desired_base_theme != self.current_base_theme:
+            try:
+                self.style.theme_use(desired_base_theme)
+                self.current_base_theme = desired_base_theme
+            except tk.TclError:
+                # Якщо теми немає, залишаємось на попередній.
+                pass
+
         self.style.configure("TFrame", background=colors["frame"])
         self.style.configure("TLabelframe", background=colors["frame"], foreground=colors["text"])
         self.style.configure("TLabelframe.Label", background=colors["frame"], foreground=colors["text"])
@@ -1459,6 +1482,7 @@ class DownloaderUI(tk.Tk):
             fieldbackground=colors["entry_bg"],
             background=colors["frame"],
             foreground=colors["text"],
+            arrowcolor=colors["text"],
         )
         self.style.map(
             "TCombobox",
@@ -1469,10 +1493,38 @@ class DownloaderUI(tk.Tk):
             "TEntry",
             fieldbackground=colors["entry_bg"],
             foreground=colors["text"],
+            insertcolor=colors["text"],
+        )
+        self.style.map(
+            "TEntry",
+            fieldbackground=[
+                ("readonly", colors["entry_bg"]),
+                ("disabled", colors["frame"]),
+            ],
+            foreground=[("disabled", colors["disabled_fg"])],
         )
         self.option_add("*TCombobox*Listbox*Background", colors["entry_bg"])
         self.option_add("*TCombobox*Listbox*Foreground", colors["text"])
         self.option_add("*TCombobox*Listbox*selectBackground", colors["button_active_bg"])
+        self.option_add("*TCombobox*Listbox*selectForeground", colors["text"])
+        self.option_add("*TCombobox*Foreground", colors["text"])
+
+        scrollbar_colors = {
+            "background": colors["button_bg"],
+            "troughcolor": colors["frame"],
+            "arrowcolor": colors["button_fg"],
+            "bordercolor": colors["frame"],
+            "lightcolor": colors["frame"],
+            "darkcolor": colors["frame"],
+        }
+        for orientation in ("Vertical", "Horizontal"):
+            style_name = f"{orientation}.TScrollbar"
+            self.style.configure(style_name, **scrollbar_colors)
+            self.style.map(
+                style_name,
+                background=[("active", colors["button_active_bg"])],
+                arrowcolor=[("active", colors["button_fg"])],
+            )
 
         self.tasks_canvas.configure(background=colors["frame"], highlightthickness=0)
         self.preview_image_label.configure(bg=colors["frame"], fg=colors["text"])
