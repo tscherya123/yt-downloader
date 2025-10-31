@@ -349,6 +349,7 @@ class DownloadWorker(threading.Thread):
 
             clip_requested = self.start_seconds > 0 or self.end_seconds is not None
             downloader_args: list[str] = []
+            clip_applied_during_download = False
             if clip_requested:
                 clip_parts: list[str] = []
                 if self.start_seconds > 0:
@@ -357,9 +358,12 @@ class DownloadWorker(threading.Thread):
                     clip_parts.append(f"-to {_format_timestamp(self.end_seconds)}")
                 if clip_parts:
                     downloader_args = [
+                        "--downloader",
+                        "ffmpeg",
                         "--downloader-args",
                         f"ffmpeg_i:{' '.join(clip_parts)}",
                     ]
+                    clip_applied_during_download = True
 
             # Крок 1: завантаження через yt-dlp
             self._log(self._t("log_download_step"))
@@ -394,7 +398,6 @@ class DownloadWorker(threading.Thread):
             self._log(self._t("log_codecs", video=video_codec, audio=audio_codec))
 
             final_path = workdir / f"{sanitized_title}.mp4"
-            clip_applied_during_download = bool(downloader_args)
             needs_transcode = not (
                 video_codec.lower() == "h264" and audio_codec.lower() == "aac"
             )
