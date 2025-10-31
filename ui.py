@@ -401,8 +401,8 @@ class DownloaderUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("YouTube Downloader")
-        self.geometry("780x720")
-        self.minsize(760, 680)
+        self.geometry("1120x720")
+        self.minsize(980, 680)
 
         self.style = ttk.Style(self)
         try:
@@ -426,30 +426,39 @@ class DownloaderUI(tk.Tk):
         container.grid(row=0, column=0, sticky="nsew")
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
-        container.grid_columnconfigure(1, weight=1)
+        container.grid_columnconfigure(0, weight=3)
+        container.grid_columnconfigure(1, weight=2)
+        container.grid_rowconfigure(0, weight=1)
 
-        ttk.Label(container, text="YouTube URL").grid(row=0, column=0, sticky="w")
+        left_frame = ttk.Frame(container)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        left_frame.grid_columnconfigure(1, weight=1)
+        left_frame.grid_rowconfigure(4, weight=1)
+
+        ttk.Label(left_frame, text="YouTube URL").grid(row=0, column=0, sticky="w")
         self.url_var = tk.StringVar()
-        self.url_entry = ttk.Entry(container, textvariable=self.url_var)
+        self.url_entry = ttk.Entry(left_frame, textvariable=self.url_var)
         self.url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 0))
         self.url_var.trace_add("write", self._on_url_change)
 
-        ttk.Label(container, text="Root folder").grid(row=1, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(left_frame, text="Root folder").grid(
+            row=1, column=0, sticky="w", pady=(12, 0)
+        )
         self.root_var = tk.StringVar(value="D:/YouTube")
-        self.root_entry = ttk.Entry(container, textvariable=self.root_var)
+        self.root_entry = ttk.Entry(left_frame, textvariable=self.root_var)
         self.root_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(12, 0))
-        ttk.Button(container, text="Вибрати", command=self._browse_root).grid(
+        ttk.Button(left_frame, text="Вибрати", command=self._browse_root).grid(
             row=1, column=2, sticky="e", pady=(12, 0)
         )
 
         self.separate_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            container, text="В окрему папку", variable=self.separate_var
+            left_frame, text="В окрему папку", variable=self.separate_var
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 0))
-        self.start_button = ttk.Button(container, text="Старт", command=self._start_worker)
+        self.start_button = ttk.Button(left_frame, text="Старт", command=self._start_worker)
         self.start_button.grid(row=2, column=2, sticky="e", pady=(12, 0))
 
-        preview_frame = ttk.LabelFrame(container, text="Попередній перегляд")
+        preview_frame = ttk.LabelFrame(left_frame, text="Попередній перегляд")
         preview_frame.grid(row=3, column=0, columnspan=3, sticky="nsew", pady=(18, 12))
         preview_frame.columnconfigure(0, weight=1)
 
@@ -475,16 +484,15 @@ class DownloaderUI(tk.Tk):
             row=2, column=0, sticky="w", padx=12, pady=(0, 12)
         )
 
-        tasks_frame = ttk.LabelFrame(container, text="Черга завантажень")
-        tasks_frame.grid(row=4, column=0, columnspan=3, sticky="nsew")
-        tasks_frame.columnconfigure(0, weight=1)
-        tasks_frame.rowconfigure(0, weight=1)
-        container.grid_rowconfigure(4, weight=1)
+        queue_frame = ttk.LabelFrame(container, text="Черга завантажень")
+        queue_frame.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
+        queue_frame.columnconfigure(0, weight=1)
+        queue_frame.rowconfigure(0, weight=1)
 
-        self.tasks_canvas = tk.Canvas(tasks_frame, highlightthickness=0, height=200)
+        self.tasks_canvas = tk.Canvas(queue_frame, highlightthickness=0)
         self.tasks_canvas.grid(row=0, column=0, sticky="nsew")
         self.tasks_scroll = ttk.Scrollbar(
-            tasks_frame, orient="vertical", command=self.tasks_canvas.yview
+            queue_frame, orient="vertical", command=self.tasks_canvas.yview
         )
         self.tasks_scroll.grid(row=0, column=1, sticky="ns")
         self.tasks_canvas.configure(yscrollcommand=self.tasks_scroll.set)
@@ -498,9 +506,8 @@ class DownloaderUI(tk.Tk):
             ),
         )
 
-        log_frame = ttk.LabelFrame(container, text="Журнал")
-        log_frame.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
-        container.grid_rowconfigure(5, weight=1)
+        log_frame = ttk.LabelFrame(left_frame, text="Журнал")
+        log_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=(6, 0))
 
         self.log_widget = scrolledtext.ScrolledText(
             log_frame,
