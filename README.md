@@ -40,8 +40,8 @@
    - Для Windows-розширень: `python -m pip install pywin32`
 5. **Отримайте файли застосунку.** Клонуйте або скопіюйте репозиторій у зручну теку, наприклад:
    ```powershell
-   cd D:\
-   git clone https://github.com/<your-account>/yt-downloader.git
+   cd D:\YouTube\
+   git clone https://github.com/tscherya123/yt-downloader
    ```
 6. **Запустіть інтерфейс.** У каталозі проєкту виконайте:
    ```powershell
