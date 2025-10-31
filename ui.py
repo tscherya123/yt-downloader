@@ -245,6 +245,10 @@ THEMES: dict[str, dict[str, str]] = {
         "canvas_bg": "#ffffff",
         "log_bg": "#ffffff",
         "log_fg": "#202124",
+        "dropdown_bg": "#ffffff",
+        "dropdown_fg": "#202124",
+        "dropdown_select_bg": "#202124",
+        "dropdown_select_fg": "#f5f5f5",
     },
     "dark": {
         "background": "#121212",
@@ -259,6 +263,10 @@ THEMES: dict[str, dict[str, str]] = {
         "canvas_bg": "#1f1f1f",
         "log_bg": "#161616",
         "log_fg": "#f5f5f5",
+        "dropdown_bg": "#000000",
+        "dropdown_fg": "#f5f5f5",
+        "dropdown_select_bg": "#f4f4f8",
+        "dropdown_select_fg": "#202124",
     },
 }
 
@@ -1506,16 +1514,25 @@ class DownloaderUI(tk.Tk):
             ],
             foreground=[("disabled", colors["disabled_fg"])],
         )
+        dropdown_bg = colors["dropdown_bg"]
+        dropdown_fg = colors["dropdown_fg"]
+        dropdown_select_bg = colors["dropdown_select_bg"]
+        dropdown_select_fg = colors["dropdown_select_fg"]
         listbox_colors = {
-            "background": colors["entry_bg"],
-            "foreground": colors["text"],
-            "selectBackground": colors["button_active_bg"],
-            "selectForeground": colors["text"],
+            "background": dropdown_bg,
+            "foreground": dropdown_fg,
+            "selectBackground": dropdown_select_bg,
+            "selectForeground": dropdown_select_fg,
+            "highlightColor": dropdown_bg,
+            "highlightBackground": dropdown_bg,
+            "borderColor": dropdown_bg,
+            "activeBackground": dropdown_select_bg,
+            "activeForeground": dropdown_select_fg,
         }
         for option, value in listbox_colors.items():
             self.option_add(f"*TCombobox*Listbox.{option}", value)
             self.option_add(f"*TCombobox*Listbox*{option}", value)
-        self.option_add("*TCombobox*Foreground", colors["text"])
+        self.option_add("*TCombobox*Foreground", dropdown_fg)
 
         scrollbar_colors = {
             "background": colors["button_bg"],
