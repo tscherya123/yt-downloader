@@ -51,7 +51,7 @@ jobs:
 
           new_text = re.sub(
               r'(__version__\s*=\s*")\d+\.\d+\.\d+(\")',
-              rf'\1{new_version}\2',
+              lambda match: f"{match.group(1)}{new_version}{match.group(2)}",
               text,
               count=1,
           )
