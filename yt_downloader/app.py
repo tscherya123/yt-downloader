@@ -43,7 +43,10 @@ from .worker import DownloadWorker
 class DownloaderUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.settings_path = Path(__file__).with_name("settings.json")
+        self.config_dir = self._prepare_config_directory()
+        self.settings_path = self.config_dir / "settings.json"
+        self.queue_state_path = self.config_dir / "download_queue.json"
+        self._migrate_legacy_state_files()
         self.settings: dict[str, object] = self._load_settings()
         self.language = self._coerce_language(self.settings.get("language"))
         self.theme = self._coerce_theme(self.settings.get("theme"))
@@ -78,7 +81,6 @@ class DownloaderUI(tk.Tk):
         saved_root = self.settings.get("root_folder")
         self.initial_root = saved_root if isinstance(saved_root, str) else default_root
 
-        self.queue_state_path = Path(__file__).with_name("download_queue.json")
         self.queue_state = self._load_queue_state()
         self.queue_records: dict[str, dict[str, Any]] = {
             item["task_id"]: item for item in self.queue_state.get("items", [])
@@ -1289,6 +1291,48 @@ class DownloaderUI(tk.Tk):
         if isinstance(value, str) and value in THEMES:
             return value
         return DEFAULT_THEME
+
+    def _prepare_config_directory(self) -> Path:
+        documents_dir = Path.home() / "Documents"
+        try:
+            documents_dir.mkdir(parents=True, exist_ok=True)
+            base_dir = documents_dir
+        except Exception:  # pylint: disable=broad-except
+            base_dir = Path.home()
+
+        config_dir = base_dir / "YT Downloader Settings"
+        try:
+            config_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:  # pylint: disable=broad-except
+            fallback_dir = Path.home() / "YT Downloader Settings"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            return fallback_dir
+        return config_dir
+
+    def _legacy_state_candidates(self, filename: str) -> list[Path]:
+        script_dir = Path(__file__).resolve().parent
+        candidates = [script_dir / filename]
+
+        cwd_candidate = Path.cwd() / filename
+        if cwd_candidate != candidates[0]:
+            candidates.append(cwd_candidate)
+
+        return candidates
+
+    def _migrate_legacy_state_files(self) -> None:
+        for filename in ("settings.json", "download_queue.json"):
+            destination = self.config_dir / filename
+            if destination.exists():
+                continue
+
+            for candidate in self._legacy_state_candidates(filename):
+                if not candidate.exists():
+                    continue
+                try:
+                    destination.write_bytes(candidate.read_bytes())
+                    break
+                except Exception:  # pylint: disable=broad-except
+                    continue
 
     def _load_settings(self) -> dict[str, object]:
         if not self.settings_path.exists():
