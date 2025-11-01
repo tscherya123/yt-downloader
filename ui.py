@@ -1447,8 +1447,8 @@ class DownloaderUI(tk.Tk):
             source_url=url,
             status="downloading",
         )
-        task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
-        self.tasks[task_id] = task_row
+        task_row.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self.tasks = {task_id: task_row, **self.tasks}
 
         record: dict[str, Any] = {
             "task_id": task_id,
@@ -1458,7 +1458,7 @@ class DownloaderUI(tk.Tk):
             "created_at": _dt.datetime.now().isoformat(),
             "url": url,
         }
-        self.queue_state["items"].append(record)
+        self.queue_state.setdefault("items", []).insert(0, record)
         self.queue_records[task_id] = record
         self._save_queue_state()
         self._reflow_task_rows()
