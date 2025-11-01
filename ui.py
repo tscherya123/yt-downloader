@@ -835,7 +835,7 @@ class TaskRow(ttk.Frame):
             anchor="w",
             justify="left",
         )
-        self.actions_frame = ttk.Frame(self, style="TaskRow.TFrame")
+        self.actions_frame = ttk.Frame(self, style="TaskActions.TFrame")
         self.cancel_button = ttk.Button(
             self.actions_frame,
             text=self.translate("button_cancel"),
@@ -849,7 +849,7 @@ class TaskRow(ttk.Frame):
         )
         self.remove_button = ttk.Button(
             self.actions_frame,
-            text="✕",
+            text="×",
             width=3,
             command=self._remove_from_history,
             takefocus=False,
@@ -1927,6 +1927,12 @@ class DownloaderUI(tk.Tk):
             background=colors["frame"],
             borderwidth=1,
             relief="solid",
+        )
+        self.style.configure(
+            "TaskActions.TFrame",
+            background=colors["frame"],
+            borderwidth=0,
+            relief="flat",
         )
         self.style.configure(
             "TaskHeader.TFrame",
