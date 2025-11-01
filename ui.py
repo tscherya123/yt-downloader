@@ -18,7 +18,7 @@ import subprocess
 import threading
 import urllib.request
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
@@ -83,11 +83,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "clip_end_label": {"uk": "Кінець", "en": "End"},
     "queue_group": {"uk": "Черга завантажень", "en": "Download queue"},
     "clear_history": {"uk": "Очистити історію", "en": "Clear history"},
+    "queue_column_title": {"uk": "Назва", "en": "Title"},
+    "queue_column_status": {"uk": "Статус", "en": "Status"},
+    "queue_column_actions": {"uk": "Дії", "en": "Actions"},
     "log_group": {"uk": "Журнал", "en": "Log"},
     "button_open_folder": {
         "uk": "Відкрити папку",
         "en": "Open folder",
     },
+    "button_cancel": {"uk": "Скасувати", "en": "Cancel"},
     "status_prefix": {
         "uk": "Статус: {status}",
         "en": "Status: {status}",
@@ -97,6 +101,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "status_converting": {"uk": "конвертується", "en": "converting"},
     "status_done": {"uk": "готово", "en": "done"},
     "status_error": {"uk": "помилка", "en": "error"},
+    "status_cancelled": {"uk": "скасовано", "en": "cancelled"},
     "dialog_choose_folder": {
         "uk": "Оберіть теку для завантажень",
         "en": "Choose download folder",
@@ -195,6 +200,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "uk": "[INFO] Уже H.264+AAC. Перейменовую без перекодування.",
         "en": "[INFO] Already H.264+AAC. Renaming without transcoding.",
     },
+    "log_cancelled": {
+        "uk": "[INFO] Завантаження скасовано користувачем.",
+        "en": "[INFO] Download cancelled by user.",
+    },
     "log_target_bitrate": {
         "uk": "[3/4] Цільовий відео-бітрейт: {bitrate}",
         "en": "[3/4] Target video bitrate: {bitrate}",
@@ -283,6 +292,11 @@ def translate(language: str, key: str, **kwargs: object) -> str:
 
 # ----- Реалізація робітника -------------------------------------------------
 
+
+class DownloadCancelled(Exception):
+    """Виняток, що сигналізує про скасування завантаження."""
+
+
 class DownloadWorker(threading.Thread):
     """Потік, що виконує повний цикл завантаження й перекодування."""
 
@@ -310,12 +324,18 @@ class DownloadWorker(threading.Thread):
         self.event_queue = event_queue
         self.error: Optional[str] = None
         self.language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+        self._cancel_event = threading.Event()
+        self._process_lock = threading.Lock()
+        self._active_process: Optional[subprocess.Popen[str]] = None
+        self._cancelled = False
 
     # pylint: disable=too-many-locals
     def run(self) -> None:  # noqa: C901 - відтворюємо логіку батника для прозорості
         workdir: Optional[Path] = None
         tempdir: Optional[Path] = None
         final_destination: Optional[Path] = None
+        cancelled = False
+        self._cancelled = False
         try:
             if not self.url:
                 raise ValueError(self._t("error_empty_url"))
@@ -325,6 +345,7 @@ class DownloadWorker(threading.Thread):
 
             self._log(self._t("log_root", root=self.root))
             self.root.mkdir(parents=True, exist_ok=True)
+            self._check_cancelled()
 
             timestamp = _dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
             workdir = self.root / f"DL_{timestamp}_{self.task_id.replace('-', '_')}"
@@ -332,12 +353,14 @@ class DownloadWorker(threading.Thread):
             tempdir.mkdir(parents=True, exist_ok=True)
             self._log(self._t("log_workdir", folder=workdir))
             self._status("downloading")
+            self._check_cancelled()
 
             meta = self._ensure_metadata()
             title = meta.get("title") or "video"
             sanitized_title = _sanitize_filename(title)
             self._log(self._t("log_title", title=title))
             self._emit("title", title=title)
+            self._check_cancelled()
 
             if self.start_seconds > 0 or self.end_seconds is not None:
                 human_start = _format_timestamp(self.start_seconds)
@@ -365,7 +388,6 @@ class DownloadWorker(threading.Thread):
                     ]
                     clip_applied_during_download = True
 
-            # Крок 1: завантаження через yt-dlp
             self._log(self._t("log_download_step"))
             yt_dlp_cmd = [
                 "yt-dlp",
@@ -394,6 +416,7 @@ class DownloadWorker(threading.Thread):
             if not src:
                 raise RuntimeError(self._t("error_missing_source"))
 
+            self._check_cancelled()
             video_codec, audio_codec = self._probe_codecs(src)
             self._log(self._t("log_codecs", video=video_codec, audio=audio_codec))
 
@@ -404,6 +427,7 @@ class DownloadWorker(threading.Thread):
 
             if not needs_transcode and not clip_applied_during_download:
                 self._log(self._t("log_skip_transcode"))
+                self._check_cancelled()
                 src.rename(final_path)
                 final_destination = final_path
             else:
@@ -471,6 +495,7 @@ class DownloadWorker(threading.Thread):
             if final_destination is None:
                 raise RuntimeError(self._t("error_final_file"))
 
+            self._check_cancelled()
             if not self.separate_folder:
                 library = self.root / "YT_DOWNLOADER_FILES"
                 library.mkdir(parents=True, exist_ok=True)
@@ -478,15 +503,43 @@ class DownloadWorker(threading.Thread):
                 shutil.move(str(final_destination), target_path)
                 final_destination = target_path
 
+            self._check_cancelled()
             self._status("done")
             self._emit("done", path=str(final_destination))
             self._log(self._t("log_done_path", path=final_destination))
+        except DownloadCancelled:
+            cancelled = True
+            self._cancelled = True
+            self.error = None
+            self._status("cancelled")
+            self._log(self._t("log_cancelled"))
         except Exception as exc:  # pylint: disable=broad-except
             self.error = str(exc)
             self._status("error")
             self._emit("error", message=self.error)
             self._log(self._t("log_error_message", error=self.error))
         finally:
+            cleanup_final = cancelled or self.error is not None
+            if cleanup_final and final_destination is not None:
+                try:
+                    if final_destination.exists():
+                        if final_destination.is_dir():
+                            shutil.rmtree(final_destination, ignore_errors=True)
+                        else:
+                            final_destination.unlink()
+                except Exception:
+                    pass
+                if not self.separate_folder:
+                    library_dir = final_destination.parent
+                    try:
+                        if (
+                            library_dir.name == "YT_DOWNLOADER_FILES"
+                            and library_dir.exists()
+                            and not any(library_dir.iterdir())
+                        ):
+                            library_dir.rmdir()
+                    except Exception:
+                        pass
             if workdir is not None:
                 try:
                     leftover = next(workdir.glob("source.*"), None)
@@ -496,7 +549,7 @@ class DownloadWorker(threading.Thread):
                     pass
             if tempdir is not None:
                 shutil.rmtree(tempdir, ignore_errors=True)
-            if workdir is not None and not self.separate_folder:
+            if workdir is not None and (cancelled or not self.separate_folder):
                 shutil.rmtree(workdir, ignore_errors=True)
 
     def _compute_vbit(self, src: Path) -> str:
@@ -592,16 +645,70 @@ class DownloadWorker(threading.Thread):
         cwd: Optional[Path] = None,
         capture_output: bool = False,
     ) -> str:
-        process = subprocess.run(  # noqa: S603 - свідоме виконання зовнішньої команди
+        self._check_cancelled()
+        process = subprocess.Popen(  # noqa: S603 - свідоме виконання зовнішньої команди
             args,
             cwd=cwd,
-            check=True,
-            capture_output=capture_output,
-            text=True,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.PIPE if capture_output else None,
+            text=capture_output,
         )
-        if capture_output:
-            return process.stdout
-        return ""
+        with self._process_lock:
+            self._active_process = process
+        stdout: Optional[str] = ""
+        stderr: Optional[str] = ""
+        try:
+            while True:
+                try:
+                    stdout, stderr = process.communicate(timeout=0.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    if self._cancel_event.is_set():
+                        try:
+                            process.kill()
+                        except Exception:
+                            pass
+                        stdout, stderr = process.communicate()
+                        break
+
+            if self._cancel_event.is_set():
+                raise DownloadCancelled()
+
+            if process.returncode and process.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    process.returncode,
+                    args,
+                    output=stdout,
+                    stderr=stderr,
+                )
+
+            if capture_output:
+                return stdout or ""
+            return ""
+        except subprocess.CalledProcessError as exc:
+            if self._cancel_event.is_set():
+                raise DownloadCancelled() from exc
+            raise
+        finally:
+            with self._process_lock:
+                self._active_process = None
+
+    def cancel(self) -> None:
+        self._cancel_event.set()
+        with self._process_lock:
+            process = self._active_process
+        if process is not None:
+            try:
+                process.terminate()
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+
+    def _check_cancelled(self) -> None:
+        if self._cancel_event.is_set():
+            raise DownloadCancelled()
 
     def _log(self, message: str) -> None:
         self._emit("log", message=message)
@@ -697,48 +804,88 @@ class TaskRow(ttk.Frame):
         title: str,
         open_callback: Callable[[Path], None],
         translator: Callable[..., str],
+        cancel_callback: Optional[Callable[[str], None]] = None,
+        remove_callback: Optional[Callable[[str], None]] = None,
+        status: str = "waiting",
+        final_path: Optional[Path] = None,
     ) -> None:
-        super().__init__(master)
+        super().__init__(master, padding=(12, 8), style="TaskRow.TFrame")
         self.task_id = task_id
         self.full_title = title
         self.display_title = _shorten_title(title)
         self.translate = translator
-        self.status_code = "waiting"
+        self.status_code = status
         self.status_var = tk.StringVar()
+        self._open_callback = open_callback
+        self._cancel_callback = cancel_callback
+        self._remove_callback = remove_callback
+        self.final_path: Optional[Path] = final_path
+
         self.title_label = ttk.Label(
             self,
             text=self.display_title,
             style="TaskTitle.TLabel",
-            width=40,
+            anchor="w",
+            justify="left",
         )
-        self.status_label = ttk.Label(self, textvariable=self.status_var)
-        self.open_button = ttk.Button(
+        self.status_label = ttk.Label(
             self,
+            textvariable=self.status_var,
+            style="TaskStatus.TLabel",
+            anchor="w",
+            justify="left",
+        )
+        self.actions_frame = ttk.Frame(self, style="TaskRow.TFrame")
+        self.cancel_button = ttk.Button(
+            self.actions_frame,
+            text=self.translate("button_cancel"),
+            command=self._cancel_task,
+        )
+        self.open_button = ttk.Button(
+            self.actions_frame,
             text=self.translate("button_open_folder"),
             command=self._open_folder,
             state="disabled",
         )
-        self._open_callback = open_callback
-        self.final_path: Optional[Path] = None
+        self.remove_button = ttk.Button(
+            self.actions_frame,
+            text="✕",
+            width=3,
+            command=self._remove_from_history,
+            takefocus=False,
+        )
 
+        self.columnconfigure(0, weight=3)
+        self.columnconfigure(1, weight=2)
+        self.columnconfigure(2, weight=0)
         self.title_label.grid(row=0, column=0, sticky="w")
-        self.status_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
-        self.open_button.grid(row=0, column=1, rowspan=2, padx=(12, 0))
-        self.grid_columnconfigure(0, weight=1)
+        self.status_label.grid(row=0, column=1, sticky="w", padx=(12, 0))
+        self.actions_frame.grid(row=0, column=2, sticky="e")
+        self.actions_frame.columnconfigure(0, weight=0)
+
+        self.cancel_button.grid(row=0, column=0, padx=(0, 6))
+        self.open_button.grid(row=0, column=1, padx=(0, 6))
+        self.remove_button.grid(row=0, column=2)
+
+        self.cancel_button.state(["disabled"])
+        self.open_button.state(["disabled"])
+        self.remove_button.state(["disabled"])
+
+        self.cancel_button.grid_remove()
+        self.open_button.grid_remove()
+        self.remove_button.grid_remove()
+
         self._update_status_text()
+        self._update_actions()
 
     def update_status(self, status: str) -> None:
         self.status_code = status
         self._update_status_text()
-        if self.status_code == "done" and self.final_path is not None:
-            self.open_button.state(["!disabled"])
-        else:
-            self.open_button.state(["disabled"])
+        self._update_actions()
 
     def set_final_path(self, path: Path) -> None:
         self.final_path = path
-        if self.status_code == "done":
-            self.open_button.state(["!disabled"])
+        self._update_actions()
 
     def set_title(self, title: str) -> None:
         self.full_title = title
@@ -747,8 +894,23 @@ class TaskRow(ttk.Frame):
 
     def retranslate(self, translator: Callable[..., str]) -> None:
         self.translate = translator
+        self.cancel_button.configure(text=self.translate("button_cancel"))
         self.open_button.configure(text=self.translate("button_open_folder"))
         self._update_status_text()
+        self._update_actions()
+
+    def mark_cancelling(self) -> None:
+        self.cancel_button.state(["disabled"])
+
+    def _cancel_task(self) -> None:
+        if self._cancel_callback is None:
+            return
+        self._cancel_callback(self.task_id)
+
+    def _remove_from_history(self) -> None:
+        if self._remove_callback is None:
+            return
+        self._remove_callback(self.task_id)
 
     def _open_folder(self) -> None:
         if self.final_path is None:
@@ -758,6 +920,37 @@ class TaskRow(ttk.Frame):
     def _update_status_text(self) -> None:
         status_text = self.translate(f"status_{self.status_code}")
         self.status_var.set(self.translate("status_prefix", status=status_text))
+
+    def _update_actions(self) -> None:
+        show_cancel = (
+            self.status_code in {"downloading", "converting"}
+            and self._cancel_callback is not None
+        )
+        if show_cancel:
+            self.cancel_button.state(["!disabled"])
+            self.cancel_button.grid()
+        else:
+            self.cancel_button.state(["disabled"])
+            self.cancel_button.grid_remove()
+
+        show_open = self.status_code == "done"
+        if show_open:
+            if self.final_path is not None:
+                self.open_button.state(["!disabled"])
+            else:
+                self.open_button.state(["disabled"])
+            self.open_button.grid()
+        else:
+            self.open_button.state(["disabled"])
+            self.open_button.grid_remove()
+
+        show_remove = show_open and self._remove_callback is not None
+        if show_remove:
+            self.remove_button.state(["!disabled"])
+            self.remove_button.grid()
+        else:
+            self.remove_button.state(["disabled"])
+            self.remove_button.grid_remove()
 
 class DownloaderUI(tk.Tk):
     def __init__(self) -> None:
@@ -797,10 +990,17 @@ class DownloaderUI(tk.Tk):
         saved_root = self.settings.get("root_folder")
         self.initial_root = saved_root if isinstance(saved_root, str) else default_root
 
+        self.queue_state_path = Path(__file__).with_name("download_queue.json")
+        self.queue_state = self._load_queue_state()
+        self.queue_records: dict[str, dict[str, Any]] = {
+            item["task_id"]: item for item in self.queue_state.get("items", [])
+        }
+        self._save_queue_state()
+
         self.event_queue: "queue.Queue[dict[str, object]]" = queue.Queue()
         self.workers: dict[str, DownloadWorker] = {}
         self.tasks: dict[str, TaskRow] = {}
-        self.task_counter = 1
+        self.task_counter = self._compute_next_task_counter()
         self.preview_fetch_in_progress = False
         self.preview_token = 0
         self.preview_info: dict[str, str] = {}
@@ -941,7 +1141,7 @@ class DownloaderUI(tk.Tk):
         queue_frame = self.queue_frame
         queue_frame.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
         queue_frame.columnconfigure(0, weight=1)
-        queue_frame.rowconfigure(1, weight=1)
+        queue_frame.rowconfigure(2, weight=1)
 
         header_frame = ttk.Frame(queue_frame)
         header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 4))
@@ -954,22 +1154,60 @@ class DownloaderUI(tk.Tk):
         )
         self.clear_history_button.grid(row=0, column=1, sticky="e")
 
+        self.queue_columns_frame = ttk.Frame(queue_frame, style="TaskHeader.TFrame")
+        columns_frame = self.queue_columns_frame
+        columns_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
+        columns_frame.columnconfigure(0, weight=3)
+        columns_frame.columnconfigure(1, weight=2)
+        columns_frame.columnconfigure(2, weight=0)
+        self.queue_title_header = ttk.Label(
+            columns_frame,
+            text=self._("queue_column_title"),
+            style="TaskHeader.TLabel",
+            anchor="w",
+        )
+        self.queue_status_header = ttk.Label(
+            columns_frame,
+            text=self._("queue_column_status"),
+            style="TaskHeader.TLabel",
+            anchor="w",
+        )
+        self.queue_actions_header = ttk.Label(
+            columns_frame,
+            text=self._("queue_column_actions"),
+            style="TaskHeader.TLabel",
+            anchor="e",
+        )
+        self.queue_title_header.grid(row=0, column=0, sticky="w")
+        self.queue_status_header.grid(row=0, column=1, sticky="w")
+        self.queue_actions_header.grid(row=0, column=2, sticky="e")
+
         self.tasks_canvas = tk.Canvas(queue_frame, highlightthickness=0)
-        self.tasks_canvas.grid(row=1, column=0, sticky="nsew")
+        self.tasks_canvas.grid(row=2, column=0, sticky="nsew")
         self.tasks_scroll = ttk.Scrollbar(
             queue_frame, orient="vertical", command=self.tasks_canvas.yview
         )
-        self.tasks_scroll.grid(row=1, column=1, sticky="ns")
+        self.tasks_scroll.grid(row=2, column=1, sticky="ns")
         self.tasks_canvas.configure(yscrollcommand=self.tasks_scroll.set)
-        self.tasks_inner = ttk.Frame(self.tasks_canvas)
+        self.tasks_inner = ttk.Frame(self.tasks_canvas, style="TaskContainer.TFrame")
         self.tasks_inner.columnconfigure(0, weight=1)
-        self.tasks_canvas.create_window((0, 0), window=self.tasks_inner, anchor="nw")
+        self.tasks_window = self.tasks_canvas.create_window(
+            (0, 0), window=self.tasks_inner, anchor="nw"
+        )
         self.tasks_inner.bind(
             "<Configure>",
             lambda _: self.tasks_canvas.configure(
                 scrollregion=self.tasks_canvas.bbox("all")
             ),
         )
+        self.tasks_canvas.bind(
+            "<Configure>",
+            lambda event: self.tasks_canvas.itemconfigure(
+                self.tasks_window, width=event.width
+            ),
+        )
+
+        self._restore_queue_from_history()
 
         self.log_frame = ttk.LabelFrame(left_frame, text=self._("log_group"))
         log_frame = self.log_frame
@@ -1081,6 +1319,7 @@ class DownloaderUI(tk.Tk):
 
         task_id = f"task-{self.task_counter}"
         self.task_counter += 1
+        self.queue_state["next_id"] = max(self.task_counter, 1)
 
         display_title = self.preview_info.get("title") or url
         task_row = TaskRow(
@@ -1089,10 +1328,24 @@ class DownloaderUI(tk.Tk):
             title=display_title,
             open_callback=self._open_result_folder,
             translator=self._,
+            cancel_callback=self._cancel_task,
+            remove_callback=self._remove_history_entry,
+            status="downloading",
         )
-        row_index = len(self.tasks)
-        task_row.grid(row=row_index, column=0, sticky="ew", pady=(0, 10))
+        task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
         self.tasks[task_id] = task_row
+
+        record: dict[str, Any] = {
+            "task_id": task_id,
+            "title": display_title,
+            "status": "downloading",
+            "path": None,
+            "created_at": _dt.datetime.now().isoformat(),
+        }
+        self.queue_state["items"].append(record)
+        self.queue_records[task_id] = record
+        self._save_queue_state()
+        self._reflow_task_rows()
         self._update_clear_history_state()
 
         clip_end_for_worker: Optional[float]
@@ -1115,7 +1368,6 @@ class DownloaderUI(tk.Tk):
         self.workers[task_id] = worker
         worker.start()
 
-        task_row.update_status("downloading")
         self._append_log(f"[{task_row.full_title}] {self._('log_process_started')}")
 
     def _on_url_change(self, *_: object) -> None:
@@ -1324,19 +1576,38 @@ class DownloaderUI(tk.Tk):
                     status = str(event.get("status", ""))
                     if status:
                         task_row.update_status(status)
+                        update_payload: dict[str, Any] = {"status": status}
+                        if status == "cancelled":
+                            update_payload["path"] = None
+                            update_payload["error"] = None
+                        self._update_queue_record(task_id, **update_payload)
                 elif event_type == "title":
                     title = str(event.get("title", task_row.display_title))
                     task_row.set_title(title)
+                    self._update_queue_record(task_id, title=title)
                 elif event_type == "done":
                     path_value = event.get("path")
                     if path_value:
                         final_path = Path(str(path_value))
                         task_row.set_final_path(final_path)
                         task_row.update_status("done")
+                        self._update_queue_record(
+                            task_id,
+                            status="done",
+                            path=str(final_path),
+                            title=task_row.full_title,
+                            error=None,
+                        )
                 elif event_type == "error":
                     message = str(event.get("message", ""))
                     if message:
                         messagebox.showerror(self._("error_generic_title"), message)
+                    self._update_queue_record(
+                        task_id,
+                        status="error",
+                        error=message or None,
+                        path=None,
+                    )
         except queue.Empty:
             pass
 
@@ -1374,11 +1645,10 @@ class DownloaderUI(tk.Tk):
         for row in list(self.tasks.values()):
             row.destroy()
         self.tasks.clear()
-        bbox = self.tasks_canvas.bbox("all")
-        if bbox:
-            self.tasks_canvas.configure(scrollregion=bbox)
-        else:
-            self.tasks_canvas.configure(scrollregion=(0, 0, 0, 0))
+        self.queue_records.clear()
+        self.queue_state["items"] = []
+        self._save_queue_state()
+        self._reflow_task_rows()
         self.tasks_canvas.yview_moveto(0)
         self._update_clear_history_state()
 
@@ -1389,6 +1659,164 @@ class DownloaderUI(tk.Tk):
             self.clear_history_button.state(["!disabled"])
         else:
             self.clear_history_button.state(["disabled"])
+
+    def _cancel_task(self, task_id: str) -> None:
+        worker = self.workers.get(task_id)
+        if not worker:
+            return
+        worker.cancel()
+        row = self.tasks.get(task_id)
+        if row:
+            row.mark_cancelling()
+        self._update_queue_record(task_id, status="cancelled", path=None, error=None)
+
+    def _remove_history_entry(self, task_id: str) -> None:
+        row = self.tasks.get(task_id)
+        if row is None or row.status_code != "done":
+            return
+        worker = self.workers.get(task_id)
+        if worker and worker.is_alive():
+            return
+        row.destroy()
+        self.tasks.pop(task_id, None)
+        self._remove_queue_record(task_id)
+        self._reflow_task_rows()
+        self._update_clear_history_state()
+
+    def _reflow_task_rows(self) -> None:
+        for index, row in enumerate(self.tasks.values()):
+            row.grid_configure(row=index)
+        self.tasks_inner.update_idletasks()
+        bbox = self.tasks_canvas.bbox("all")
+        if bbox:
+            self.tasks_canvas.configure(scrollregion=bbox)
+        else:
+            self.tasks_canvas.configure(scrollregion=(0, 0, 0, 0))
+
+    def _restore_queue_from_history(self) -> None:
+        for record in self.queue_state.get("items", []):
+            task_id = str(record.get("task_id", ""))
+            if not task_id:
+                continue
+            title = str(record.get("title") or task_id)
+            status = str(record.get("status") or "done")
+            path_value = record.get("path")
+            final_path = None
+            if isinstance(path_value, str) and path_value:
+                final_path = Path(path_value)
+            task_row = TaskRow(
+                self.tasks_inner,
+                task_id=task_id,
+                title=title,
+                open_callback=self._open_result_folder,
+                translator=self._,
+                cancel_callback=self._cancel_task,
+                remove_callback=self._remove_history_entry,
+                status=status,
+                final_path=final_path,
+            )
+            task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
+            self.tasks[task_id] = task_row
+        self._reflow_task_rows()
+        self._update_clear_history_state()
+
+    def _update_queue_record(self, task_id: str, **changes: Any) -> None:
+        record = self.queue_records.get(task_id)
+        if not record:
+            return
+        for key, value in changes.items():
+            if key == "path":
+                record[key] = str(value) if value else None
+            elif key == "error":
+                if value:
+                    record[key] = str(value)
+                else:
+                    record.pop(key, None)
+            elif key == "title":
+                record[key] = str(value)
+            elif key == "status":
+                record[key] = str(value)
+            else:
+                record[key] = value
+        self._save_queue_state()
+
+    def _remove_queue_record(self, task_id: str) -> None:
+        self.queue_records.pop(task_id, None)
+        self.queue_state["items"] = [
+            item for item in self.queue_state.get("items", []) if item.get("task_id") != task_id
+        ]
+        self._save_queue_state()
+
+    def _save_queue_state(self) -> None:
+        stored_next = self.queue_state.get("next_id")
+        next_id = stored_next if isinstance(stored_next, int) and stored_next > 0 else 1
+        state = {"next_id": next_id, "items": self.queue_state.get("items", [])}
+        try:
+            with self.queue_state_path.open("w", encoding="utf-8") as handle:
+                json.dump(state, handle, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _load_queue_state(self) -> dict[str, Any]:
+        default: dict[str, Any] = {"next_id": 1, "items": []}
+        if not self.queue_state_path.exists():
+            return default
+        try:
+            with self.queue_state_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception:
+            return default
+        if not isinstance(data, dict):
+            return default
+        items: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        allowed_statuses = {"waiting", "downloading", "converting", "done", "error", "cancelled"}
+        for raw in data.get("items", []):
+            if not isinstance(raw, dict):
+                continue
+            task_id = str(raw.get("task_id", "")).strip()
+            if not task_id or task_id in seen_ids:
+                continue
+            seen_ids.add(task_id)
+            title = str(raw.get("title") or task_id)
+            status = str(raw.get("status") or "done")
+            if status not in allowed_statuses:
+                status = "cancelled" if status in {"downloading", "converting"} else "done"
+            if status in {"downloading", "converting"}:
+                status = "cancelled"
+            path_value = raw.get("path")
+            path = str(path_value).strip() if isinstance(path_value, str) else ""
+            entry: dict[str, Any] = {
+                "task_id": task_id,
+                "title": title,
+                "status": status,
+                "path": path or None,
+                "created_at": str(raw.get("created_at"))
+                if isinstance(raw.get("created_at"), str)
+                and raw.get("created_at")
+                else _dt.datetime.now().isoformat(),
+            }
+            error_value = raw.get("error")
+            if isinstance(error_value, str) and error_value:
+                entry["error"] = error_value
+            items.append(entry)
+        next_id = data.get("next_id")
+        if not isinstance(next_id, int) or next_id < 1:
+            next_id = 1
+        return {"next_id": next_id, "items": items}
+
+    def _compute_next_task_counter(self) -> int:
+        max_id = 0
+        for task_id in self.queue_records:
+            try:
+                suffix = int(str(task_id).split("-")[-1])
+            except ValueError:
+                continue
+            max_id = max(max_id, suffix)
+        stored_next = self.queue_state.get("next_id")
+        if isinstance(stored_next, int) and stored_next > 0:
+            max_id = max(max_id, stored_next - 1)
+        return max(max_id + 1, 1)
 
     def _set_clip_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -1455,6 +1883,10 @@ class DownloaderUI(tk.Tk):
         self.clip_start_label.configure(text=self._("clip_start_label"))
         self.clip_end_label.configure(text=self._("clip_end_label"))
         self.clear_history_button.configure(text=self._("clear_history"))
+        if hasattr(self, "queue_title_header"):
+            self.queue_title_header.configure(text=self._("queue_column_title"))
+            self.queue_status_header.configure(text=self._("queue_column_status"))
+            self.queue_actions_header.configure(text=self._("queue_column_actions"))
 
         self._set_preview_title(self.preview_title_value)
         self._set_preview_duration(self.preview_duration_value)
@@ -1489,6 +1921,31 @@ class DownloaderUI(tk.Tk):
             background=colors["frame"],
             foreground=colors["text"],
             font=("Segoe UI", 10, "bold"),
+        )
+        self.style.configure(
+            "TaskRow.TFrame",
+            background=colors["frame"],
+            borderwidth=1,
+            relief="solid",
+        )
+        self.style.configure(
+            "TaskHeader.TFrame",
+            background=colors["frame"],
+        )
+        self.style.configure(
+            "TaskHeader.TLabel",
+            background=colors["frame"],
+            foreground=colors["text"],
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.style.configure(
+            "TaskStatus.TLabel",
+            background=colors["frame"],
+            foreground=colors["muted"],
+        )
+        self.style.configure(
+            "TaskContainer.TFrame",
+            background=colors["canvas_bg"],
         )
         self.style.configure(
             "TButton",
@@ -1582,7 +2039,11 @@ class DownloaderUI(tk.Tk):
         if hasattr(self, "theme_combo"):
             self._style_combobox_dropdown(self.theme_combo, **dropdown_kwargs)
 
-        self.tasks_canvas.configure(background=colors["frame"], highlightthickness=0)
+        self.tasks_canvas.configure(background=colors["canvas_bg"], highlightthickness=0)
+        if hasattr(self, "tasks_inner"):
+            self.tasks_inner.configure(style="TaskContainer.TFrame")
+        if hasattr(self, "queue_columns_frame"):
+            self.queue_columns_frame.configure(style="TaskHeader.TFrame")
         self.preview_image_label.configure(bg=colors["frame"], fg=colors["text"])
         self.log_widget.configure(
             bg=colors["log_bg"], fg=colors["log_fg"], insertbackground=colors["log_fg"]
