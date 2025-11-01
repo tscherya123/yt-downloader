@@ -1,5 +1,7 @@
 """Core package for the YouTube Downloader desktop application."""
 
+__version__ = "0.1.0"
+
 from .app import DownloaderUI, main
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
 from .themes import DEFAULT_THEME, THEMES
@@ -15,4 +17,5 @@ __all__ = [
     "THEMES",
     "translate",
     "main",
+    "__version__",
 ]
