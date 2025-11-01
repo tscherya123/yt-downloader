@@ -17,8 +17,10 @@ import shutil
 import subprocess
 import threading
 import urllib.request
+import webbrowser
 from pathlib import Path
 from typing import Any, Callable, Optional
+from urllib.parse import parse_qs, urlparse
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
@@ -164,6 +166,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "error_open_folder_failed": {
         "uk": "Не вдалося відкрити теку: {error}",
         "en": "Failed to open folder: {error}",
+    },
+    "error_open_url_failed": {
+        "uk": "Не вдалося відкрити посилання: {error}",
+        "en": "Failed to open link: {error}",
+    },
+    "error_open_url_failed_unknown": {
+        "uk": "невідома причина",
+        "en": "unknown reason",
     },
     "language_label": {"uk": "Мова", "en": "Language"},
     "theme_label": {"uk": "Тема", "en": "Theme"},
@@ -756,6 +766,36 @@ def _shorten_title(title: str, limit: int = 40) -> str:
     return title[:cutoff] + "..."
 
 
+def _is_youtube_video_url(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    candidate = value.strip()
+    if not candidate:
+        return False
+    try:
+        parsed = urlparse(candidate)
+    except Exception:
+        return False
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return False
+    host = parsed.netloc.lower()
+    path = parsed.path or ""
+    if host.endswith("youtube.com"):
+        if path.startswith("/watch"):
+            query = parse_qs(parsed.query)
+            return any(part for part in query.get("v", []) if part.strip())
+        if path.startswith("/shorts/"):
+            return bool(path.split("/shorts/", 1)[-1].strip("/"))
+        if path.startswith("/live/"):
+            return bool(path.split("/live/", 1)[-1].strip("/"))
+        if path.startswith("/embed/"):
+            return bool(path.split("/embed/", 1)[-1].strip("/"))
+        return False
+    if host == "youtu.be" or host.endswith(".youtu.be"):
+        return bool(path.strip("/"))
+    return False
+
+
 def _parse_time_input(text: str) -> Optional[float]:
     cleaned = text.strip()
     if not cleaned:
@@ -806,6 +846,9 @@ class TaskRow(ttk.Frame):
         translator: Callable[..., str],
         cancel_callback: Optional[Callable[[str], None]] = None,
         remove_callback: Optional[Callable[[str], None]] = None,
+        open_url_callback: Optional[Callable[[str], None]] = None,
+        retry_callback: Optional[Callable[[str, str], None]] = None,
+        source_url: Optional[str] = None,
         status: str = "waiting",
         final_path: Optional[Path] = None,
     ) -> None:
@@ -819,6 +862,13 @@ class TaskRow(ttk.Frame):
         self._open_callback = open_callback
         self._cancel_callback = cancel_callback
         self._remove_callback = remove_callback
+        self._open_url_callback = open_url_callback
+        self._retry_callback = retry_callback
+        if isinstance(source_url, str):
+            stripped = source_url.strip()
+            self.source_url = stripped or None
+        else:
+            self.source_url = None
         self.final_path: Optional[Path] = final_path
 
         self.title_label = ttk.Label(
@@ -835,7 +885,7 @@ class TaskRow(ttk.Frame):
             anchor="w",
             justify="left",
         )
-        self.actions_frame = ttk.Frame(self, style="TaskRow.TFrame")
+        self.actions_frame = ttk.Frame(self, style="TaskActions.TFrame")
         self.cancel_button = ttk.Button(
             self.actions_frame,
             text=self.translate("button_cancel"),
@@ -847,9 +897,23 @@ class TaskRow(ttk.Frame):
             command=self._open_folder,
             state="disabled",
         )
+        self.open_link_button = ttk.Button(
+            self.actions_frame,
+            text="»",
+            width=3,
+            command=self._open_source_url,
+            takefocus=False,
+        )
+        self.retry_button = ttk.Button(
+            self.actions_frame,
+            text="↻",
+            width=3,
+            command=self._trigger_retry,
+            takefocus=False,
+        )
         self.remove_button = ttk.Button(
             self.actions_frame,
-            text="✕",
+            text="×",
             width=3,
             command=self._remove_from_history,
             takefocus=False,
@@ -865,14 +929,20 @@ class TaskRow(ttk.Frame):
 
         self.cancel_button.grid(row=0, column=0, padx=(0, 6))
         self.open_button.grid(row=0, column=1, padx=(0, 6))
-        self.remove_button.grid(row=0, column=2)
+        self.open_link_button.grid(row=0, column=2, padx=(0, 6))
+        self.retry_button.grid(row=0, column=3, padx=(0, 6))
+        self.remove_button.grid(row=0, column=4)
 
         self.cancel_button.state(["disabled"])
         self.open_button.state(["disabled"])
+        self.open_link_button.state(["disabled"])
+        self.retry_button.state(["disabled"])
         self.remove_button.state(["disabled"])
 
         self.cancel_button.grid_remove()
         self.open_button.grid_remove()
+        self.open_link_button.grid_remove()
+        self.retry_button.grid_remove()
         self.remove_button.grid_remove()
 
         self._update_status_text()
@@ -885,6 +955,14 @@ class TaskRow(ttk.Frame):
 
     def set_final_path(self, path: Path) -> None:
         self.final_path = path
+        self._update_actions()
+
+    def set_source_url(self, url: Optional[str]) -> None:
+        if isinstance(url, str):
+            stripped = url.strip()
+            self.source_url = stripped or None
+        else:
+            self.source_url = None
         self._update_actions()
 
     def set_title(self, title: str) -> None:
@@ -917,6 +995,16 @@ class TaskRow(ttk.Frame):
             return
         self._open_callback(self.final_path)
 
+    def _open_source_url(self) -> None:
+        if not self.source_url or self._open_url_callback is None:
+            return
+        self._open_url_callback(self.source_url)
+
+    def _trigger_retry(self) -> None:
+        if not self.source_url or self._retry_callback is None:
+            return
+        self._retry_callback(self.task_id, self.source_url)
+
     def _update_status_text(self) -> None:
         status_text = self.translate(f"status_{self.status_code}")
         self.status_var.set(self.translate("status_prefix", status=status_text))
@@ -944,7 +1032,30 @@ class TaskRow(ttk.Frame):
             self.open_button.state(["disabled"])
             self.open_button.grid_remove()
 
-        show_remove = show_open and self._remove_callback is not None
+        show_open_link = bool(self.source_url and self._open_url_callback)
+        if show_open_link:
+            self.open_link_button.state(["!disabled"])
+            self.open_link_button.grid()
+        else:
+            self.open_link_button.state(["disabled"])
+            self.open_link_button.grid_remove()
+
+        show_retry = (
+            self._retry_callback is not None
+            and self.source_url
+            and self.status_code in {"error", "cancelled", "waiting"}
+        )
+        if show_retry:
+            self.retry_button.state(["!disabled"])
+            self.retry_button.grid()
+        else:
+            self.retry_button.state(["disabled"])
+            self.retry_button.grid_remove()
+
+        show_remove = (
+            self._remove_callback is not None
+            and self.status_code not in {"downloading", "converting"}
+        )
         if show_remove:
             self.remove_button.state(["!disabled"])
             self.remove_button.grid()
@@ -1000,6 +1111,7 @@ class DownloaderUI(tk.Tk):
         self.event_queue: "queue.Queue[dict[str, object]]" = queue.Queue()
         self.workers: dict[str, DownloadWorker] = {}
         self.tasks: dict[str, TaskRow] = {}
+        self.task_order: list[str] = []
         self.task_counter = self._compute_next_task_counter()
         self.preview_fetch_in_progress = False
         self.preview_token = 0
@@ -1060,6 +1172,7 @@ class DownloaderUI(tk.Tk):
             left_frame, text=self._("search_button"), command=self._fetch_preview
         )
         self.search_button.grid(row=0, column=2, sticky="e")
+        self._update_search_button_state()
 
         self.root_label = ttk.Label(left_frame, text=self._("root_label"))
         self.root_label.grid(row=1, column=0, sticky="w", pady=(12, 0))
@@ -1330,10 +1443,14 @@ class DownloaderUI(tk.Tk):
             translator=self._,
             cancel_callback=self._cancel_task,
             remove_callback=self._remove_history_entry,
+            open_url_callback=self._open_source_url,
+            retry_callback=self._retry_task,
+            source_url=url,
             status="downloading",
         )
-        task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
-        self.tasks[task_id] = task_row
+        task_row.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self.tasks = {task_id: task_row, **self.tasks}
+        self.task_order.insert(0, task_id)
 
         record: dict[str, Any] = {
             "task_id": task_id,
@@ -1341,8 +1458,9 @@ class DownloaderUI(tk.Tk):
             "status": "downloading",
             "path": None,
             "created_at": _dt.datetime.now().isoformat(),
+            "url": url,
         }
-        self.queue_state["items"].append(record)
+        self.queue_state.setdefault("items", []).insert(0, record)
         self.queue_records[task_id] = record
         self._save_queue_state()
         self._reflow_task_rows()
@@ -1390,6 +1508,27 @@ class DownloaderUI(tk.Tk):
         self.thumbnail_image = None
         self.download_button.state(["disabled"])
         self._set_clip_controls_enabled(False)
+        self._update_search_button_state()
+
+    def _update_search_button_state(self) -> None:
+        if not hasattr(self, "search_button"):
+            return
+        should_enable = (
+            not self.preview_fetch_in_progress
+            and _is_youtube_video_url(self.url_var.get().strip())
+        )
+        if should_enable:
+            self.search_button.state(["!disabled"])
+            try:
+                self.search_button.configure(state=tk.NORMAL)
+            except tk.TclError:
+                pass
+        else:
+            self.search_button.state(["disabled"])
+            try:
+                self.search_button.configure(state=tk.DISABLED)
+            except tk.TclError:
+                pass
 
     def _fetch_preview(self) -> None:
         url = self.url_var.get().strip()
@@ -1400,12 +1539,15 @@ class DownloaderUI(tk.Tk):
             return
         if self.preview_fetch_in_progress:
             return
+        if not _is_youtube_video_url(url):
+            self._update_search_button_state()
+            return
 
         self.preview_fetch_in_progress = True
+        self._update_search_button_state()
         self.preview_token += 1
         token = self.preview_token
         self._set_preview_status("loading")
-        self.search_button.state(["disabled"])
         self.download_button.state(["disabled"])
         self._set_preview_title(None)
         self._set_preview_duration(None)
@@ -1472,11 +1614,7 @@ class DownloaderUI(tk.Tk):
 
     def _preview_fetch_done(self, _: int) -> None:
         self.preview_fetch_in_progress = False
-        self.search_button.state(["!disabled"])
-        try:
-            self.search_button.configure(state=tk.NORMAL)
-        except tk.TclError:
-            pass
+        self._update_search_button_state()
 
     def _apply_preview(
         self,
@@ -1536,11 +1674,7 @@ class DownloaderUI(tk.Tk):
         self._set_preview_status("error")
         self.download_button.state(["disabled"])
         self._set_clip_controls_enabled(False)
-        self.search_button.state(["!disabled"])
-        try:
-            self.search_button.configure(state=tk.NORMAL)
-        except tk.TclError:
-            pass
+        self._update_search_button_state()
         messagebox.showwarning(
             self._("warning_url_title"), self._("preview_status_error")
         )
@@ -1559,6 +1693,7 @@ class DownloaderUI(tk.Tk):
         self._set_preview_status("idle")
         self.download_button.state(["disabled"])
         self._set_clip_controls_enabled(False)
+        self._update_search_button_state()
 
     def _poll_queue(self) -> None:
         try:
@@ -1645,6 +1780,7 @@ class DownloaderUI(tk.Tk):
         for row in list(self.tasks.values()):
             row.destroy()
         self.tasks.clear()
+        self.task_order.clear()
         self.queue_records.clear()
         self.queue_state["items"] = []
         self._save_queue_state()
@@ -1670,22 +1806,55 @@ class DownloaderUI(tk.Tk):
             row.mark_cancelling()
         self._update_queue_record(task_id, status="cancelled", path=None, error=None)
 
+    def _retry_task(self, _: str, url: str) -> None:
+        cleaned = url.strip()
+        if not cleaned:
+            return
+        self.url_var.set(cleaned)
+        self._update_search_button_state()
+        try:
+            self.url_entry.focus_set()
+        except tk.TclError:
+            pass
+
+        def trigger_fetch() -> None:
+            if self.preview_fetch_in_progress:
+                self.after(150, trigger_fetch)
+                return
+            if _is_youtube_video_url(self.url_var.get().strip()):
+                self._fetch_preview()
+
+        self.after_idle(trigger_fetch)
+
     def _remove_history_entry(self, task_id: str) -> None:
         row = self.tasks.get(task_id)
-        if row is None or row.status_code != "done":
+        if row is None:
+            return
+        if row.status_code in {"downloading", "converting"}:
             return
         worker = self.workers.get(task_id)
         if worker and worker.is_alive():
             return
         row.destroy()
         self.tasks.pop(task_id, None)
+        try:
+            self.task_order.remove(task_id)
+        except ValueError:
+            pass
         self._remove_queue_record(task_id)
         self._reflow_task_rows()
         self._update_clear_history_state()
 
     def _reflow_task_rows(self) -> None:
-        for index, row in enumerate(self.tasks.values()):
+        cleaned_order: list[str] = []
+        for index, task_id in enumerate(self.task_order):
+            row = self.tasks.get(task_id)
+            if not row:
+                continue
             row.grid_configure(row=index)
+            cleaned_order.append(task_id)
+        if len(cleaned_order) != len(self.task_order):
+            self.task_order = cleaned_order
         self.tasks_inner.update_idletasks()
         bbox = self.tasks_canvas.bbox("all")
         if bbox:
@@ -1704,6 +1873,12 @@ class DownloaderUI(tk.Tk):
             final_path = None
             if isinstance(path_value, str) and path_value:
                 final_path = Path(path_value)
+            url_value = record.get("url")
+            source_url = None
+            if isinstance(url_value, str):
+                stripped = url_value.strip()
+                if stripped:
+                    source_url = stripped
             task_row = TaskRow(
                 self.tasks_inner,
                 task_id=task_id,
@@ -1712,11 +1887,15 @@ class DownloaderUI(tk.Tk):
                 translator=self._,
                 cancel_callback=self._cancel_task,
                 remove_callback=self._remove_history_entry,
+                open_url_callback=self._open_source_url,
+                retry_callback=self._retry_task,
+                source_url=source_url,
                 status=status,
                 final_path=final_path,
             )
             task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
             self.tasks[task_id] = task_row
+            self.task_order.append(task_id)
         self._reflow_task_rows()
         self._update_clear_history_state()
 
@@ -1732,12 +1911,17 @@ class DownloaderUI(tk.Tk):
                     record[key] = str(value)
                 else:
                     record.pop(key, None)
+            elif key == "url":
+                record[key] = str(value) if value else None
             elif key == "title":
                 record[key] = str(value)
             elif key == "status":
                 record[key] = str(value)
             else:
                 record[key] = value
+        row = self.tasks.get(task_id)
+        if row and "url" in changes:
+            row.set_source_url(changes["url"])
         self._save_queue_state()
 
     def _remove_queue_record(self, task_id: str) -> None:
@@ -1786,11 +1970,14 @@ class DownloaderUI(tk.Tk):
                 status = "cancelled"
             path_value = raw.get("path")
             path = str(path_value).strip() if isinstance(path_value, str) else ""
+            url_value = raw.get("url")
+            url = str(url_value).strip() if isinstance(url_value, str) else ""
             entry: dict[str, Any] = {
                 "task_id": task_id,
                 "title": title,
                 "status": status,
                 "path": path or None,
+                "url": url or None,
                 "created_at": str(raw.get("created_at"))
                 if isinstance(raw.get("created_at"), str)
                 and raw.get("created_at")
@@ -1927,6 +2114,12 @@ class DownloaderUI(tk.Tk):
             background=colors["frame"],
             borderwidth=1,
             relief="solid",
+        )
+        self.style.configure(
+            "TaskActions.TFrame",
+            background=colors["frame"],
+            borderwidth=0,
+            relief="flat",
         )
         self.style.configure(
             "TaskHeader.TFrame",
@@ -2183,6 +2376,24 @@ class DownloaderUI(tk.Tk):
             widget.event_generate(sequence)
             return "break"
         return None
+
+    def _open_source_url(self, url: str) -> None:
+        try:
+            opened = webbrowser.open(url, new=2)
+        except Exception as exc:  # pylint: disable=broad-except
+            messagebox.showerror(
+                self._("error_generic_title"),
+                self._("error_open_url_failed", error=exc),
+            )
+            return
+        if not opened:
+            messagebox.showerror(
+                self._("error_generic_title"),
+                self._(
+                    "error_open_url_failed",
+                    error=self._("error_open_url_failed_unknown"),
+                ),
+            )
 
     def _open_result_folder(self, path: Path) -> None:
         if not path.exists():
