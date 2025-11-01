@@ -1111,6 +1111,7 @@ class DownloaderUI(tk.Tk):
         self.event_queue: "queue.Queue[dict[str, object]]" = queue.Queue()
         self.workers: dict[str, DownloadWorker] = {}
         self.tasks: dict[str, TaskRow] = {}
+        self.task_order: list[str] = []
         self.task_counter = self._compute_next_task_counter()
         self.preview_fetch_in_progress = False
         self.preview_token = 0
@@ -1449,6 +1450,7 @@ class DownloaderUI(tk.Tk):
         )
         task_row.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self.tasks = {task_id: task_row, **self.tasks}
+        self.task_order.insert(0, task_id)
 
         record: dict[str, Any] = {
             "task_id": task_id,
@@ -1778,6 +1780,7 @@ class DownloaderUI(tk.Tk):
         for row in list(self.tasks.values()):
             row.destroy()
         self.tasks.clear()
+        self.task_order.clear()
         self.queue_records.clear()
         self.queue_state["items"] = []
         self._save_queue_state()
@@ -1834,13 +1837,24 @@ class DownloaderUI(tk.Tk):
             return
         row.destroy()
         self.tasks.pop(task_id, None)
+        try:
+            self.task_order.remove(task_id)
+        except ValueError:
+            pass
         self._remove_queue_record(task_id)
         self._reflow_task_rows()
         self._update_clear_history_state()
 
     def _reflow_task_rows(self) -> None:
-        for index, row in enumerate(self.tasks.values()):
+        cleaned_order: list[str] = []
+        for index, task_id in enumerate(self.task_order):
+            row = self.tasks.get(task_id)
+            if not row:
+                continue
             row.grid_configure(row=index)
+            cleaned_order.append(task_id)
+        if len(cleaned_order) != len(self.task_order):
+            self.task_order = cleaned_order
         self.tasks_inner.update_idletasks()
         bbox = self.tasks_canvas.bbox("all")
         if bbox:
@@ -1881,6 +1895,7 @@ class DownloaderUI(tk.Tk):
             )
             task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
             self.tasks[task_id] = task_row
+            self.task_order.append(task_id)
         self._reflow_task_rows()
         self._update_clear_history_state()
 
