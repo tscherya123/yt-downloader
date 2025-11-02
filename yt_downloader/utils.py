@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from typing import Optional
@@ -111,3 +113,31 @@ def unique_path(candidate: Path) -> Path:
         if not new_candidate.exists():
             return new_candidate
         counter += 1
+
+
+def subprocess_no_window_kwargs() -> dict[str, object]:
+    """Return keyword arguments to hide console windows on Windows.
+
+    On non-Windows systems the function returns an empty dictionary.
+    The returned dictionary can be safely expanded into calls to
+    :mod:`subprocess` helpers.
+    """
+
+    if os.name != "nt":  # pragma: no cover - Windows-specific behaviour
+        return {}
+
+    creationflags = (
+        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0)
+    )
+    try:  # pragma: no cover - executed only on Windows
+        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+    except AttributeError:  # pragma: no cover - safety net for exotic runtimes
+        startupinfo = None
+
+    kwargs: dict[str, object] = {"creationflags": creationflags}
+    if startupinfo is not None:
+        kwargs["startupinfo"] = startupinfo
+    return kwargs
