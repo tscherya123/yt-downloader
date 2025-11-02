@@ -639,18 +639,39 @@ class DownloaderUI(tk.Tk):
         return self._photoimage_from_bytes(payload)
 
     def _photoimage_from_bytes(self, payload: bytes) -> Optional[tk.PhotoImage]:
+        detected_format = self._detect_image_format(payload)
+        encoded = base64.b64encode(payload).decode("ascii")
+        if detected_format:
+            try:
+                return tk.PhotoImage(data=encoded, format=detected_format)
+            except (tk.TclError, RuntimeError, ValueError):
+                pass
         try:
-            encoded = base64.b64encode(payload).decode("ascii")
             return tk.PhotoImage(data=encoded)
         except (tk.TclError, RuntimeError, ValueError):
-            png_payload = self._transcode_image_to_png(payload)
-            if not png_payload:
-                return None
+            pass
+
+        png_payload = self._transcode_image_to_png(payload)
+        if not png_payload:
+            return None
+
+        try:
+            encoded_png = base64.b64encode(png_payload).decode("ascii")
+            return tk.PhotoImage(data=encoded_png, format="png")
+        except (tk.TclError, RuntimeError, ValueError):
             try:
-                encoded = base64.b64encode(png_payload).decode("ascii")
-                return tk.PhotoImage(data=encoded)
+                return tk.PhotoImage(data=encoded_png)
             except (tk.TclError, RuntimeError, ValueError):
                 return None
+
+    def _detect_image_format(self, payload: bytes) -> Optional[str]:
+        if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "png"
+        if payload.startswith(b"\xff\xd8\xff"):
+            return "jpeg"
+        if payload.startswith(b"GIF87a") or payload.startswith(b"GIF89a"):
+            return "gif"
+        return None
 
     def _transcode_image_to_png(self, payload: bytes) -> Optional[bytes]:
         try:

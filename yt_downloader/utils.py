@@ -126,10 +126,14 @@ def subprocess_no_window_kwargs() -> dict[str, object]:
     if os.name != "nt":  # pragma: no cover - Windows-specific behaviour
         return {}
 
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    creationflags = (
+        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0)
+    )
     try:  # pragma: no cover - executed only on Windows
         startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
         startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
     except AttributeError:  # pragma: no cover - safety net for exotic runtimes
         startupinfo = None
 
