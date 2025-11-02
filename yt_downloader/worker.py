@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
-from .utils import format_timestamp, sanitize_filename, unique_path
+from .utils import (
+    format_timestamp,
+    sanitize_filename,
+    subprocess_no_window_kwargs,
+    unique_path,
+)
 
 
 class DownloadCancelled(Exception):
@@ -347,6 +352,7 @@ class DownloadWorker(threading.Thread):
             stdout=subprocess.PIPE if capture_output else None,
             stderr=subprocess.PIPE if capture_output else None,
             text=capture_output,
+            **subprocess_no_window_kwargs(),
         )
         with self._process_lock:
             self._active_process = process
