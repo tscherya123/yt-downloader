@@ -66,6 +66,7 @@ jobs:
         run: pytest
 
       - name: Build application
+        shell: bash
         run: |
           pyinstaller \
             --onefile \
