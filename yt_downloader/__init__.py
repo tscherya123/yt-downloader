@@ -1,6 +1,6 @@
 """Core package for the YouTube Downloader desktop application."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 from .app import DownloaderUI, main
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
