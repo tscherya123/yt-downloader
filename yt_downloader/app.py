@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import datetime as _dt
 import json
@@ -32,6 +33,14 @@ from .localization import (
     translate,
 )
 from .themes import DEFAULT_THEME, THEMES
+from .updates import (
+    InstallResult,
+    UpdateError,
+    UpdateInfo,
+    check_for_update,
+    download_update_asset,
+    install_downloaded_asset,
+)
 from .utils import (
     format_timestamp as _format_timestamp,
     is_youtube_video_url as _is_youtube_video_url,
@@ -39,11 +48,31 @@ from .utils import (
 )
 from .widgets import TaskRow
 from .worker import DownloadWorker
+from .version import __version__
 
 
 class DownloaderUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
+        self.withdraw()
+
+        self.app_version = __version__
+        self.update_dialog: Optional[tk.Toplevel] = None
+        self.update_dialog_message_var = tk.StringVar()
+        self.update_dialog_progress: Optional[ttk.Progressbar] = None
+        self.update_button_frame: Optional[ttk.Frame] = None
+        self.update_primary_button: Optional[ttk.Button] = None
+        self.update_secondary_button: Optional[ttk.Button] = None
+        self._update_message_key: Optional[str] = None
+        self._update_message_kwargs: dict[str, object] = {}
+        self._update_dialog_title_key: Optional[str] = None
+        self._update_primary_button_key: Optional[str] = None
+        self._update_secondary_button_key: Optional[str] = None
+        self._update_dialog_can_close = False
+        self.pending_update_info: Optional[UpdateInfo] = None
+        self.pending_install_result: Optional[InstallResult] = None
+        self._update_download_total: Optional[int] = None
+
         self.config_dir = self._prepare_config_directory()
         self.settings_path = self.config_dir / "settings.json"
         self.queue_state_path = self.config_dir / "download_queue.json"
@@ -52,7 +81,9 @@ class DownloaderUI(tk.Tk):
         self.language = self._coerce_language(self.settings.get("language"))
         self.theme = self._coerce_theme(self.settings.get("theme"))
 
-        self.title(self._("app_title"))
+        self.update_cache_dir = self.config_dir / "updates"
+
+        self._set_window_title()
         self.geometry("1200x760")
         self.minsize(1040, 700)
 
@@ -324,6 +355,7 @@ class DownloaderUI(tk.Tk):
         self._update_clear_history_state()
         self._apply_language()
         self._apply_theme()
+        self.after(400, self._initiate_update_check)
     def _set_preview_title(self, title: Optional[str]) -> None:
         self.preview_title_value = title
         display = title if title else "—"
@@ -1025,7 +1057,7 @@ class DownloaderUI(tk.Tk):
         current_theme_name = theme_names.get(self.theme, theme_names[DEFAULT_THEME])
         self.theme_display_var.set(current_theme_name)
 
-        self.title(self._("app_title"))
+        self._set_window_title()
         self.language_label.configure(text=self._("language_label"))
         self.theme_label.configure(text=self._("theme_label"))
         self.url_label.configure(text=self._("url_label"))
@@ -1053,10 +1085,28 @@ class DownloaderUI(tk.Tk):
 
         for row in self.tasks.values():
             row.retranslate(self._)
+        self._refresh_update_dialog_language()
 
     def _apply_theme(self) -> None:
         colors = THEMES.get(self.theme, THEMES[DEFAULT_THEME])
         self.configure(bg=colors["background"])
+
+    def _set_window_title(self) -> None:
+        self.title(self._("app_title_with_version", version=self.app_version))
+
+    def _refresh_update_dialog_language(self) -> None:
+        if not self.update_dialog:
+            return
+        if self._update_dialog_title_key is not None:
+            self.update_dialog.title(self._(self._update_dialog_title_key))
+        if self._update_message_key is not None:
+            self.update_dialog_message_var.set(
+                self._(self._update_message_key, **self._update_message_kwargs)
+            )
+        if self.update_primary_button and self._update_primary_button_key is not None:
+            self.update_primary_button.configure(text=self._(self._update_primary_button_key))
+        if self.update_secondary_button and self._update_secondary_button_key is not None:
+            self.update_secondary_button.configure(text=self._(self._update_secondary_button_key))
 
         desired_base_theme = (
             self.light_base_theme if self.theme == "light" else self.dark_base_theme
@@ -1426,6 +1476,382 @@ class DownloaderUI(tk.Tk):
                 self._("error_root_title"),
                 self._("error_open_folder_failed", error=exc),
             )
+
+    def _initiate_update_check(self) -> None:
+        if self.update_dialog is not None:
+            return
+        self.pending_update_info = None
+        self.pending_install_result = None
+        self._update_download_total = None
+        self._build_update_dialog()
+        self._set_update_dialog_title("update_check_title")
+        self._set_update_dialog_message("update_check_message")
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.configure(mode="indeterminate")
+            self.update_dialog_progress.start(15)
+        self._set_update_dialog_closable(False)
+        threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+
+    def _build_update_dialog(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.withdraw()
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.protocol("WM_DELETE_WINDOW", self._on_update_dialog_close_attempt)
+        frame = ttk.Frame(dialog, padding=18)
+        frame.pack(fill="both", expand=True)
+
+        message_label = ttk.Label(
+            frame,
+            textvariable=self.update_dialog_message_var,
+            justify="center",
+            wraplength=380,
+        )
+        message_label.pack(fill="x", padx=6, pady=(6, 12))
+
+        progress = ttk.Progressbar(frame, mode="indeterminate", length=260)
+        progress.pack(fill="x", padx=6, pady=(0, 18))
+        self.update_dialog_progress = progress
+
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill="x", padx=6, pady=(0, 6))
+        self.update_button_frame = button_frame
+        self.update_secondary_button = ttk.Button(button_frame)
+        self.update_primary_button = ttk.Button(button_frame)
+        self.update_secondary_button.pack_forget()
+        self.update_primary_button.pack_forget()
+
+        self.update_dialog = dialog
+        self._configure_update_dialog_buttons()
+        dialog.deiconify()
+        self._center_modal(dialog)
+        try:
+            dialog.grab_set()
+        except tk.TclError:
+            pass
+        dialog.focus_set()
+
+    def _center_modal(self, window: tk.Toplevel) -> None:
+        window.update_idletasks()
+        width = window.winfo_width()
+        height = window.winfo_height()
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
+        x_position = max((screen_width - width) // 2, 0)
+        y_position = max((screen_height - height) // 3, 0)
+        window.geometry(f"{width}x{height}+{x_position}+{y_position}")
+
+    def _set_update_dialog_title(self, key: str) -> None:
+        self._update_dialog_title_key = key
+        if self.update_dialog is not None:
+            self.update_dialog.title(self._(key))
+
+    def _set_update_dialog_message(self, key: str, **kwargs: object) -> None:
+        self._update_message_key = key
+        self._update_message_kwargs = kwargs
+        self.update_dialog_message_var.set(self._(key, **kwargs))
+
+    def _configure_update_dialog_buttons(
+        self,
+        primary: Optional[tuple[str, Callable[[], None]]] = None,
+        secondary: Optional[tuple[str, Callable[[], None]]] = None,
+    ) -> None:
+        if self.update_button_frame is None:
+            return
+        if self.update_secondary_button is None:
+            self.update_secondary_button = ttk.Button(self.update_button_frame)
+        if self.update_primary_button is None:
+            self.update_primary_button = ttk.Button(self.update_button_frame)
+
+        self.update_primary_button.pack_forget()
+        self.update_secondary_button.pack_forget()
+
+        if secondary is not None:
+            key, command = secondary
+            self.update_secondary_button.configure(text=self._(key), command=command)
+            self.update_secondary_button.pack(side="right", padx=6)
+            self._update_secondary_button_key = key
+        else:
+            self._update_secondary_button_key = None
+
+        if primary is not None:
+            key, command = primary
+            self.update_primary_button.configure(text=self._(key), command=command)
+            self.update_primary_button.pack(side="right", padx=6)
+            self._update_primary_button_key = key
+        else:
+            self._update_primary_button_key = None
+
+    def _set_update_dialog_closable(self, value: bool) -> None:
+        self._update_dialog_can_close = value
+
+    def _on_update_dialog_close_attempt(self) -> None:
+        if self._update_dialog_can_close:
+            self._close_update_dialog()
+
+    def _show_main_window(self) -> None:
+        self.deiconify()
+        self.lift()
+        try:
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+    def _close_update_dialog(self, show_main: bool = True) -> None:
+        if self.update_dialog_progress is not None:
+            try:
+                self.update_dialog_progress.stop()
+            except tk.TclError:
+                pass
+        if self.update_dialog is not None:
+            try:
+                self.update_dialog.grab_release()
+            except tk.TclError:
+                pass
+            self.update_dialog.destroy()
+        self.update_dialog = None
+        self.update_dialog_progress = None
+        self.update_button_frame = None
+        self.update_primary_button = None
+        self.update_secondary_button = None
+        self._update_message_key = None
+        self._update_message_kwargs = {}
+        self._update_dialog_title_key = None
+        self._update_primary_button_key = None
+        self._update_secondary_button_key = None
+        self._update_dialog_can_close = False
+        self.pending_update_info = None
+        self.pending_install_result = None
+        self._update_download_total = None
+        if show_main:
+            self._show_main_window()
+
+    def _check_for_updates_worker(self) -> None:
+        try:
+            info = check_for_update(self.app_version)
+        except UpdateError as exc:
+            self.after(0, lambda: self._on_update_check_failed(str(exc)))
+        except Exception as exc:  # pylint: disable=broad-except
+            self.after(0, lambda: self._on_update_check_failed(str(exc)))
+        else:
+            self.after(0, lambda: self._on_update_check_completed(info))
+
+    def _on_update_check_completed(self, info: Optional[UpdateInfo]) -> None:
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.stop()
+            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+        if info is None:
+            self._set_update_dialog_title("update_check_title")
+            self._set_update_dialog_message(
+                "update_check_no_updates", version=self.app_version
+            )
+            self._configure_update_dialog_buttons(
+                primary=("update_button_continue", lambda: self._close_update_dialog(True))
+            )
+            self._set_update_dialog_closable(True)
+            return
+
+        self.pending_update_info = info
+        if not info.asset_url:
+            self._set_update_dialog_title("update_available_title")
+            self._set_update_dialog_message(
+                "update_available_manual", latest=info.latest_version
+            )
+            self._configure_update_dialog_buttons(
+                primary=(
+                    "update_button_open_page",
+                    lambda url=info.release_page: self._on_open_release_page(url),
+                ),
+                secondary=("update_button_later", lambda: self._close_update_dialog(True)),
+            )
+            self._set_update_dialog_closable(True)
+            return
+
+        self._set_update_dialog_title("update_available_title")
+        self._set_update_dialog_message(
+            "update_available_message",
+            latest=info.latest_version,
+            current=self.app_version,
+        )
+        self._configure_update_dialog_buttons(
+            primary=("update_button_install", lambda data=info: self._start_update_download(data)),
+            secondary=("update_button_later", lambda: self._close_update_dialog(True)),
+        )
+        self._set_update_dialog_closable(True)
+
+    def _on_update_check_failed(self, error_message: str) -> None:
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.stop()
+            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+        self._set_update_dialog_title("update_error_title")
+        self._set_update_dialog_message("update_check_failed", error=error_message)
+        self._configure_update_dialog_buttons(
+            primary=("update_button_continue", lambda: self._close_update_dialog(True))
+        )
+        self._set_update_dialog_closable(True)
+
+    def _start_update_download(self, info: UpdateInfo) -> None:
+        self.pending_update_info = info
+        self.pending_install_result = None
+        self._update_download_total = None
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.stop()
+            self.update_dialog_progress.configure(mode="indeterminate")
+            self.update_dialog_progress.start(15)
+        self._set_update_dialog_title("update_download_title")
+        self._set_update_dialog_message(
+            "update_download_preparing", version=info.latest_version
+        )
+        self._configure_update_dialog_buttons()
+        self._set_update_dialog_closable(False)
+        threading.Thread(
+            target=self._download_update_worker,
+            args=(info,),
+            daemon=True,
+        ).start()
+
+    def _handle_download_progress(self, downloaded: int, total: Optional[int]) -> None:
+        self.after(0, lambda: self._update_download_progress_ui(downloaded, total))
+
+    def _update_download_progress_ui(self, downloaded: int, total: Optional[int]) -> None:
+        if self.update_dialog_progress is None:
+            return
+        if total and total > 0:
+            if self.update_dialog_progress.cget("mode") != "determinate":
+                self.update_dialog_progress.stop()
+                self.update_dialog_progress.configure(mode="determinate", maximum=total)
+            self._update_download_total = total
+            value = min(downloaded, total)
+            self.update_dialog_progress.configure(value=value)
+            percent = min(int(round(value * 100 / total)), 100)
+            self._set_update_dialog_message("update_download_progress", percent=percent)
+        else:
+            if self.update_dialog_progress.cget("mode") != "indeterminate":
+                self.update_dialog_progress.configure(mode="indeterminate")
+                self.update_dialog_progress.start(15)
+            if self.pending_update_info is not None:
+                self._set_update_dialog_message(
+                    "update_download_preparing",
+                    version=self.pending_update_info.latest_version,
+                )
+
+    def _download_update_worker(self, info: UpdateInfo) -> None:
+        try:
+            download_path = download_update_asset(
+                info,
+                self.update_cache_dir,
+                progress_callback=self._handle_download_progress,
+            )
+            result = install_downloaded_asset(
+                download_path, info.latest_version, self.update_cache_dir
+            )
+        except UpdateError as exc:
+            self.after(0, lambda: self._on_update_install_failed(str(exc), info))
+        except Exception as exc:  # pylint: disable=broad-except
+            self.after(0, lambda: self._on_update_install_failed(str(exc), info))
+        else:
+            self.after(0, lambda: self._on_update_install_succeeded(result))
+
+    def _on_update_install_succeeded(self, result: InstallResult) -> None:
+        self.pending_install_result = result
+        self.pending_update_info = None
+        self._update_download_total = None
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.stop()
+            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=100)
+        self._set_update_dialog_title("update_install_title")
+
+        launched = False
+        launch_error: Optional[Exception] = None
+        if result.executable is not None:
+            try:
+                self._launch_file(result.executable)
+                launched = True
+            except Exception as exc:  # pylint: disable=broad-except
+                launch_error = exc
+
+        if launched:
+            self._set_update_dialog_message(
+                "update_install_success_launched", version=result.version
+            )
+            self._configure_update_dialog_buttons(
+                primary=("update_button_exit", self._exit_after_update),
+            )
+            self._set_update_dialog_closable(True)
+            self.after(4000, self._exit_after_update)
+            return
+
+        if launch_error is not None:
+            self._set_update_dialog_message(
+                "update_install_launch_failed",
+                version=result.version,
+                path=str(result.base_path),
+                error=launch_error,
+            )
+        else:
+            self._set_update_dialog_message(
+                "update_install_success_manual",
+                version=result.version,
+                path=str(result.base_path),
+            )
+        self._configure_update_dialog_buttons(
+            primary=(
+                "update_button_open_folder",
+                lambda target=result.base_path: self._open_directory(target),
+            ),
+            secondary=("update_button_continue", lambda: self._close_update_dialog(True)),
+        )
+        self._set_update_dialog_closable(True)
+        self.after(200, lambda target=result.base_path: self._open_directory(target))
+
+    def _on_update_install_failed(self, error_message: str, info: UpdateInfo) -> None:
+        self.pending_update_info = info
+        self._update_download_total = None
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.stop()
+            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+        self._set_update_dialog_title("update_error_title")
+        self._set_update_dialog_message("update_install_failed", error=error_message)
+        self._configure_update_dialog_buttons(
+            primary=("update_button_retry", lambda data=info: self._start_update_download(data)),
+            secondary=("update_button_continue", lambda: self._close_update_dialog(True)),
+        )
+        self._set_update_dialog_closable(True)
+
+    def _exit_after_update(self) -> None:
+        self._close_update_dialog(show_main=False)
+        self.after(50, self.destroy)
+
+    def _launch_file(self, path: Path) -> None:
+        if sys.platform.startswith("win"):
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)], close_fds=True)
+        else:
+            subprocess.Popen([str(path)], close_fds=True)
+
+    def _open_directory(self, path: Path) -> None:
+        target = path if path.is_dir() else path.parent
+        if not target.exists():
+            return
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)], close_fds=True)
+            else:
+                subprocess.Popen(["xdg-open", str(target)], close_fds=True)
+        except Exception as exc:  # pylint: disable=broad-except
+            messagebox.showerror(
+                self._("error_root_title"),
+                self._("error_open_folder_failed", error=exc),
+            )
+
+    def _on_open_release_page(self, url: str) -> None:
+        try:
+            webbrowser.open(url)
+        finally:
+            self._close_update_dialog(True)
 
 
 
