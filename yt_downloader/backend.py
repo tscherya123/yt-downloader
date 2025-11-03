@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
@@ -63,7 +67,13 @@ def _build_base_options() -> Dict[str, Any]:
 def fetch_video_metadata(url: str) -> Dict[str, Any]:
     """Return the metadata for ``url`` using the ``yt_dlp`` Python API."""
 
-    context = _ensure_yt_dlp()
+    try:
+        context = _ensure_yt_dlp()
+    except BackendError as exc:
+        try:
+            return _fetch_video_metadata_subprocess(url)
+        except BackendError as subprocess_exc:
+            raise subprocess_exc from exc
     options = {"skip_download": True, **_build_base_options()}
     with context.YoutubeDL(options) as ydl:
         return ydl.extract_info(url, download=False)
@@ -116,3 +126,60 @@ def download_video(
         if candidate.is_file():
             return candidate
     raise FileNotFoundError("Downloaded file not found in workdir")
+
+
+def _locate_yt_dlp_executable() -> Optional[Path]:
+    """Try to locate a ``yt-dlp`` executable on the current system."""
+
+    executable = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+    if executable:
+        return Path(executable)
+
+    current_executable = Path(sys.executable)
+    search_roots = {current_executable.resolve().parent, Path(__file__).resolve().parent}
+    for root in search_roots:
+        for name in ("yt-dlp.exe", "yt-dlp"):
+            candidate = root / name
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _fetch_video_metadata_subprocess(url: str) -> Dict[str, Any]:
+    """Fetch metadata by invoking an external ``yt-dlp`` process."""
+
+    executable = _locate_yt_dlp_executable()
+    if not executable:
+        raise BackendError(
+            "yt-dlp is not installed. Install the 'yt-dlp' package to enable video downloads."
+        )
+
+    command = [
+        str(executable),
+        "--dump-single-json",
+        "--no-warnings",
+        "--quiet",
+        "--skip-download",
+        url,
+    ]
+    try:
+        completed = subprocess.run(  # noqa: S603,S607 - trusted executable discovery
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - defensive guard
+        raise BackendError(
+            "yt-dlp executable is not accessible. Install 'yt-dlp' to enable video downloads."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        stderr_output = (exc.stderr or "").strip()
+        if stderr_output:
+            raise BackendError(stderr_output) from exc
+        raise BackendError("yt-dlp failed to fetch video metadata.") from exc
+
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise BackendError("Failed to decode yt-dlp output.") from exc
