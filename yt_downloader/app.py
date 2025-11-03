@@ -75,6 +75,10 @@ class DownloaderUI(tk.Tk):
         self._update_dialog_can_close = False
         self._update_auto_close_after: Optional[str] = None
         self._update_dialog_shown_at: Optional[float] = None
+        self._update_check_start_job: Optional[str] = None
+        self._post_update_check_job: Optional[str] = None
+        self._update_check_started_at: Optional[float] = None
+        self._update_check_finished_at: Optional[float] = None
         self.pending_update_info: Optional[UpdateInfo] = None
         self.pending_install_result: Optional[InstallResult] = None
         self._update_download_total: Optional[int] = None
@@ -1559,7 +1563,21 @@ class DownloaderUI(tk.Tk):
             self.update_dialog_progress.configure(mode="indeterminate")
             self.update_dialog_progress.start(15)
         self._set_update_dialog_closable(False)
-        threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+        self._update_check_started_at = None
+        self._update_check_finished_at = None
+        if self._update_check_start_job is not None:
+            try:
+                self.after_cancel(self._update_check_start_job)
+            except tk.TclError:
+                pass
+        self._log_update_event("Delaying update check start", extra={"delay_ms": 1000})
+
+        def _start_worker() -> None:
+            self._update_check_start_job = None
+            self._update_check_started_at = time.monotonic()
+            threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+
+        self._update_check_start_job = str(self.after(1000, _start_worker))
 
     def _build_update_dialog(self) -> None:
         self._log_update_event("Building update view")
@@ -1681,6 +1699,18 @@ class DownloaderUI(tk.Tk):
             "Closing update dialog",
             extra={"show_main": show_main, "pending_info": bool(self.pending_update_info)},
         )
+        if self._update_check_start_job is not None:
+            try:
+                self.after_cancel(self._update_check_start_job)
+            except tk.TclError:
+                pass
+            self._update_check_start_job = None
+        if self._post_update_check_job is not None:
+            try:
+                self.after_cancel(self._post_update_check_job)
+            except tk.TclError:
+                pass
+            self._post_update_check_job = None
         if self._update_auto_close_after is not None:
             try:
                 self.after_cancel(self._update_auto_close_after)
@@ -1727,14 +1757,24 @@ class DownloaderUI(tk.Tk):
             self._log_update_event(
                 "Update check failed", extra={"error": str(exc)}
             )
-            self.after(0, lambda: self._on_update_check_failed(str(exc)))
+            self.after(
+                0,
+                lambda: self._queue_post_update_check(
+                    lambda: self._on_update_check_failed(str(exc))
+                ),
+            )
         except Exception as exc:  # pylint: disable=broad-except
             self._log_update_event(
                 "Unexpected update check error",
                 extra={"error": str(exc)},
                 include_exception=True,
             )
-            self.after(0, lambda: self._on_update_check_failed(str(exc)))
+            self.after(
+                0,
+                lambda: self._queue_post_update_check(
+                    lambda: self._on_update_check_failed(str(exc))
+                ),
+            )
         else:
             self._log_update_event(
                 "Update check completed",
@@ -1743,7 +1783,32 @@ class DownloaderUI(tk.Tk):
                     "latest": getattr(info, "latest_version", None),
                 },
             )
-            self.after(0, lambda: self._on_update_check_completed(info))
+            self.after(
+                0,
+                lambda: self._queue_post_update_check(
+                    lambda: self._on_update_check_completed(info)
+                ),
+            )
+
+    def _queue_post_update_check(self, callback: Callable[[], None]) -> None:
+        self._update_check_finished_at = time.monotonic()
+        if self._post_update_check_job is not None:
+            try:
+                self.after_cancel(self._post_update_check_job)
+            except tk.TclError:
+                pass
+            self._post_update_check_job = None
+
+        def _invoke_callback() -> None:
+            self._post_update_check_job = None
+            callback()
+
+        delay_ms = 3000
+        self._log_update_event(
+            "Delaying post update check handling",
+            extra={"delay_ms": delay_ms},
+        )
+        self._post_update_check_job = str(self.after(delay_ms, _invoke_callback))
 
     def _on_update_check_completed(self, info: Optional[UpdateInfo]) -> None:
         self._log_update_event(
