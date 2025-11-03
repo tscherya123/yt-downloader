@@ -10,6 +10,7 @@ import json
 import queue
 import subprocess
 import threading
+import traceback
 import urllib.request
 import webbrowser
 import time
@@ -58,6 +59,8 @@ class DownloaderUI(tk.Tk):
         self.withdraw()
 
         self.app_version = __version__
+        self.update_log_path = self._determine_update_log_path()
+        self._update_log_lock = threading.Lock()
         self.update_dialog: Optional[tk.Toplevel] = None
         self.update_dialog_message_var = tk.StringVar()
         self.update_dialog_progress: Optional[ttk.Progressbar] = None
@@ -115,6 +118,8 @@ class DownloaderUI(tk.Tk):
         default_root = str((Path.home() / "Downloads").resolve())
         saved_root = self.settings.get("root_folder")
         self.initial_root = saved_root if isinstance(saved_root, str) else default_root
+
+        self._log_update_event("Application started", extra={"version": self.app_version})
 
         self.queue_state = self._load_queue_state()
         self.queue_records: dict[str, dict[str, Any]] = {
@@ -359,6 +364,35 @@ class DownloaderUI(tk.Tk):
         self._apply_language()
         self._apply_theme()
         self.after(400, self._initiate_update_check)
+
+    def _determine_update_log_path(self) -> Path:
+        if getattr(sys, "frozen", False):
+            base_dir = Path(sys.executable).resolve().parent
+        else:
+            base_dir = Path(__file__).resolve().parent
+        return base_dir / "update.log"
+
+    def _log_update_event(
+        self,
+        message: str,
+        *,
+        extra: Optional[dict[str, object]] = None,
+        include_exception: bool = False,
+    ) -> None:
+        try:
+            timestamp = _dt.datetime.now().isoformat(sep=" ", timespec="seconds")
+            payload = {"message": message}
+            if extra:
+                payload.update(extra)
+            if include_exception:
+                payload["exception"] = traceback.format_exc()
+            line = f"[{timestamp}] " + json.dumps(payload, ensure_ascii=False)
+            with self._update_log_lock:
+                with self.update_log_path.open("a", encoding="utf-8") as log_file:
+                    log_file.write(line + "\n")
+        except Exception:
+            pass
+
     def _set_preview_title(self, title: Optional[str]) -> None:
         self.preview_title_value = title
         display = title if title else "—"
@@ -1483,6 +1517,7 @@ class DownloaderUI(tk.Tk):
     def _initiate_update_check(self) -> None:
         if self.update_dialog is not None:
             return
+        self._log_update_event("Starting update check dialog")
         self.pending_update_info = None
         self.pending_install_result = None
         self._update_download_total = None
@@ -1496,6 +1531,7 @@ class DownloaderUI(tk.Tk):
         threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
 
     def _build_update_dialog(self) -> None:
+        self._log_update_event("Building update dialog")
         dialog = tk.Toplevel(self)
         dialog.withdraw()
         dialog.transient(self)
@@ -1527,6 +1563,10 @@ class DownloaderUI(tk.Tk):
         self.update_dialog = dialog
         self._configure_update_dialog_buttons()
         dialog.deiconify()
+        try:
+            dialog.wait_visibility()
+        except tk.TclError:
+            pass
         self._center_modal(dialog)
         self._update_dialog_shown_at = time.monotonic()
         try:
@@ -1534,6 +1574,7 @@ class DownloaderUI(tk.Tk):
         except tk.TclError:
             pass
         dialog.focus_set()
+        self._log_update_event("Update dialog shown")
 
     def _center_modal(self, window: tk.Toplevel) -> None:
         window.update_idletasks()
@@ -1602,6 +1643,10 @@ class DownloaderUI(tk.Tk):
             pass
 
     def _close_update_dialog(self, show_main: bool = True) -> None:
+        self._log_update_event(
+            "Closing update dialog",
+            extra={"show_main": show_main, "pending_info": bool(self.pending_update_info)},
+        )
         if self._update_auto_close_after is not None:
             try:
                 self.after_cancel(self._update_auto_close_after)
@@ -1638,16 +1683,37 @@ class DownloaderUI(tk.Tk):
             self._show_main_window()
 
     def _check_for_updates_worker(self) -> None:
+        self._log_update_event(
+            "Update worker started", extra={"current_version": self.app_version}
+        )
         try:
             info = check_for_update(self.app_version)
         except UpdateError as exc:
+            self._log_update_event(
+                "Update check failed", extra={"error": str(exc)}
+            )
             self.after(0, lambda: self._on_update_check_failed(str(exc)))
         except Exception as exc:  # pylint: disable=broad-except
+            self._log_update_event(
+                "Unexpected update check error",
+                extra={"error": str(exc)},
+                include_exception=True,
+            )
             self.after(0, lambda: self._on_update_check_failed(str(exc)))
         else:
+            self._log_update_event(
+                "Update check completed",
+                extra={
+                    "update_available": bool(info),
+                    "latest": getattr(info, "latest_version", None),
+                },
+            )
             self.after(0, lambda: self._on_update_check_completed(info))
 
     def _on_update_check_completed(self, info: Optional[UpdateInfo]) -> None:
+        self._log_update_event(
+            "Handling update check result", extra={"has_update": bool(info)}
+        )
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
             self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
@@ -1690,6 +1756,9 @@ class DownloaderUI(tk.Tk):
         self._set_update_dialog_closable(True)
 
     def _on_update_check_failed(self, error_message: str) -> None:
+        self._log_update_event(
+            "Displaying update check failure", extra={"error": error_message}
+        )
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
             self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
@@ -1700,6 +1769,14 @@ class DownloaderUI(tk.Tk):
         self._schedule_update_dialog_close()
 
     def _start_update_download(self, info: UpdateInfo) -> None:
+        self._log_update_event(
+            "Starting update download",
+            extra={
+                "version": info.latest_version,
+                "asset": info.asset_name,
+                "has_url": bool(info.asset_url),
+            },
+        )
         self.pending_update_info = info
         self.pending_install_result = None
         self._update_download_total = None
@@ -1745,6 +1822,14 @@ class DownloaderUI(tk.Tk):
                 )
 
     def _download_update_worker(self, info: UpdateInfo) -> None:
+        self._log_update_event(
+            "Download worker started",
+            extra={
+                "version": info.latest_version,
+                "asset": info.asset_name,
+                "has_url": bool(info.asset_url),
+            },
+        )
         try:
             download_path = download_update_asset(
                 info,
@@ -1755,13 +1840,33 @@ class DownloaderUI(tk.Tk):
                 download_path, info.latest_version, self.update_cache_dir
             )
         except UpdateError as exc:
+            self._log_update_event("Download failed", extra={"error": str(exc)})
             self.after(0, lambda: self._on_update_install_failed(str(exc), info))
         except Exception as exc:  # pylint: disable=broad-except
+            self._log_update_event(
+                "Unexpected download error",
+                extra={"error": str(exc)},
+                include_exception=True,
+            )
             self.after(0, lambda: self._on_update_install_failed(str(exc), info))
         else:
+            self._log_update_event(
+                "Download completed",
+                extra={
+                    "version": info.latest_version,
+                    "downloaded_path": str(download_path),
+                },
+            )
             self.after(0, lambda: self._on_update_install_succeeded(result))
 
     def _on_update_install_succeeded(self, result: InstallResult) -> None:
+        self._log_update_event(
+            "Installation succeeded",
+            extra={
+                "version": result.version,
+                "executable": str(result.executable) if result.executable else None,
+            },
+        )
         self.pending_install_result = result
         self.pending_update_info = None
         self._update_download_total = None
@@ -1814,7 +1919,12 @@ class DownloaderUI(tk.Tk):
         self.after(200, lambda target=result.base_path: self._open_directory(target))
 
     def _on_update_install_failed(self, error_message: str, info: UpdateInfo) -> None:
+        self._log_update_event(
+            "Installation failed",
+            extra={"error": error_message, "version": info.latest_version},
+        )
         self.pending_update_info = info
+        self.pending_install_result = None
         self._update_download_total = None
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
@@ -1830,6 +1940,8 @@ class DownloaderUI(tk.Tk):
     def _schedule_update_dialog_close(self, delay: int = 1200) -> None:
         if self.update_dialog is None:
             return
+
+        self._log_update_event("Scheduling update dialog close", extra={"delay_ms": delay})
 
         def _close_if_pending() -> None:
             self._update_auto_close_after = None
