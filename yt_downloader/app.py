@@ -61,7 +61,7 @@ class DownloaderUI(tk.Tk):
         self.app_version = __version__
         self.update_log_path = self._determine_update_log_path()
         self._update_log_lock = threading.Lock()
-        self.update_dialog: Optional[tk.Toplevel] = None
+        self.update_dialog: Optional[tk.Widget] = None
         self.update_dialog_message_var = tk.StringVar()
         self.update_dialog_progress: Optional[ttk.Progressbar] = None
         self.update_button_frame: Optional[ttk.Frame] = None
@@ -137,6 +137,26 @@ class DownloaderUI(tk.Tk):
         self.preview_info: dict[str, str] = {}
         self.duration_seconds: Optional[float] = None
         self.thumbnail_image: Optional["ImageTk.PhotoImage"] = None
+
+        self.preview_title_value: Optional[str] = None
+        self.preview_duration_value: Optional[str] = None
+        self.preview_status_key = "idle"
+
+        self._main_interface_initialized = False
+
+        self.update_view: Optional[ttk.Frame] = None
+        self.update_title_var = tk.StringVar()
+        self.update_title_label: Optional[ttk.Label] = None
+
+        self.protocol("WM_DELETE_WINDOW", self._on_root_close_attempt)
+
+        self.after(200, self._poll_queue)
+        self.after(300, self._ensure_root_folder)
+        self.after(400, self._initiate_update_check)
+
+    def _build_main_interface(self) -> None:
+        if self._main_interface_initialized:
+            return
 
         container = ttk.Frame(self, padding=12)
         container.grid(row=0, column=0, sticky="nsew")
@@ -352,18 +372,12 @@ class DownloaderUI(tk.Tk):
         )
         self.log_widget.pack(fill="both", expand=True, padx=6, pady=8)
 
-        self.preview_title_value: Optional[str] = None
-        self.preview_duration_value: Optional[str] = None
-        self.preview_status_key = "idle"
-
         self._register_clipboard_shortcuts()
 
-        self.after(200, self._poll_queue)
-        self.after(300, self._ensure_root_folder)
-        self._update_clear_history_state()
+        self._main_interface_initialized = True
         self._apply_language()
         self._apply_theme()
-        self.after(400, self._initiate_update_check)
+        self._update_clear_history_state()
 
     def _determine_update_log_path(self) -> Path:
         if getattr(sys, "frozen", False):
@@ -395,16 +409,22 @@ class DownloaderUI(tk.Tk):
 
     def _set_preview_title(self, title: Optional[str]) -> None:
         self.preview_title_value = title
+        if not hasattr(self, "preview_title_var"):
+            return
         display = title if title else "—"
         self.preview_title_var.set(self._("preview_title", title=display))
 
     def _set_preview_duration(self, duration: Optional[str]) -> None:
         self.preview_duration_value = duration
+        if not hasattr(self, "preview_duration_var"):
+            return
         display = duration if duration else "—"
         self.preview_duration_var.set(self._("preview_duration", duration=display))
 
     def _set_preview_status(self, key: str) -> None:
         self.preview_status_key = key
+        if not hasattr(self, "preview_status_var"):
+            return
         if key == "idle":
             self.preview_status_var.set("")
             return
@@ -412,6 +432,8 @@ class DownloaderUI(tk.Tk):
 
     def _set_preview_image_text(self, key: Optional[str]) -> None:
         self.preview_image_text_key = key
+        if not hasattr(self, "preview_image_label"):
+            return
         if key is None:
             self.preview_image_label.configure(text="")
         else:
@@ -792,6 +814,8 @@ class DownloaderUI(tk.Tk):
         self.after(200, self._poll_queue)
 
     def _append_log(self, message: str) -> None:
+        if not hasattr(self, "log_widget"):
+            return
         self.log_widget.configure(state="normal")
         self.log_widget.insert("end", message + "\n")
         self.log_widget.see("end")
@@ -1080,6 +1104,8 @@ class DownloaderUI(tk.Tk):
         self._apply_theme()
 
     def _apply_language(self) -> None:
+        if not self._main_interface_initialized:
+            return
         language_names = {code: translate(self.language, f"language_{code}") for code in SUPPORTED_LANGUAGES}
         self._language_display_by_code = language_names
         self._language_name_map = {name: code for code, name in language_names.items()}
@@ -1125,6 +1151,8 @@ class DownloaderUI(tk.Tk):
         self._refresh_update_dialog_language()
 
     def _apply_theme(self) -> None:
+        if not self._main_interface_initialized:
+            return
         colors = THEMES.get(self.theme, THEMES[DEFAULT_THEME])
         self.configure(bg=colors["background"])
 
@@ -1135,7 +1163,10 @@ class DownloaderUI(tk.Tk):
         if not self.update_dialog:
             return
         if self._update_dialog_title_key is not None:
-            self.update_dialog.title(self._(self._update_dialog_title_key))
+            title_text = self._(self._update_dialog_title_key)
+            self.title(title_text)
+            if self.update_title_label is not None:
+                self.update_title_var.set(title_text)
         if self._update_message_key is not None:
             self.update_dialog_message_var.set(
                 self._(self._update_message_key, **self._update_message_kwargs)
@@ -1531,81 +1562,60 @@ class DownloaderUI(tk.Tk):
         threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
 
     def _build_update_dialog(self) -> None:
-        self._log_update_event("Building update dialog")
-        dialog = tk.Toplevel(self)
-        dialog.withdraw()
-        dialog.transient(self)
-        dialog.resizable(False, False)
-        dialog.protocol("WM_DELETE_WINDOW", self._on_update_dialog_close_attempt)
-        frame = ttk.Frame(dialog, padding=18)
-        frame.pack(fill="both", expand=True)
+        self._log_update_event("Building update view")
+        if self.update_view is None:
+            container = ttk.Frame(self, padding=24)
+            container.grid(row=0, column=0, sticky="nsew")
+            self.grid_rowconfigure(0, weight=1)
+            self.grid_columnconfigure(0, weight=1)
 
-        message_label = ttk.Label(
-            frame,
-            textvariable=self.update_dialog_message_var,
-            justify="center",
-            wraplength=380,
-        )
-        message_label.pack(fill="x", padx=6, pady=(6, 12))
+            self.update_title_label = ttk.Label(
+                container,
+                textvariable=self.update_title_var,
+                font=("Segoe UI", 14, "bold"),
+                anchor="center",
+                justify="center",
+            )
+            self.update_title_label.pack(fill="x", pady=(0, 12))
 
-        progress = ttk.Progressbar(frame, mode="indeterminate", length=260)
-        progress.pack(fill="x", padx=6, pady=(0, 18))
-        self.update_dialog_progress = progress
+            message_label = ttk.Label(
+                container,
+                textvariable=self.update_dialog_message_var,
+                justify="center",
+                wraplength=460,
+            )
+            message_label.pack(fill="x", padx=6, pady=(0, 18))
 
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill="x", padx=6, pady=(0, 6))
-        self.update_button_frame = button_frame
-        self.update_secondary_button = ttk.Button(button_frame)
-        self.update_primary_button = ttk.Button(button_frame)
-        self.update_secondary_button.pack_forget()
-        self.update_primary_button.pack_forget()
+            progress = ttk.Progressbar(container, mode="indeterminate", length=260)
+            progress.pack(fill="x", padx=30, pady=(0, 24))
+            self.update_dialog_progress = progress
 
-        self.update_dialog = dialog
+            button_frame = ttk.Frame(container)
+            button_frame.pack(fill="x", pady=(0, 12))
+            self.update_button_frame = button_frame
+            self.update_secondary_button = ttk.Button(button_frame)
+            self.update_primary_button = ttk.Button(button_frame)
+            self.update_secondary_button.pack_forget()
+            self.update_primary_button.pack_forget()
+
+            self.update_view = container
+
+        self.update_dialog = self.update_view
         self._configure_update_dialog_buttons()
-        dialog.deiconify()
-        dialog.update_idletasks()
-        self._schedule_update_dialog_presentation(dialog)
+        self._present_update_view()
 
-    def _schedule_update_dialog_presentation(self, dialog: tk.Toplevel) -> None:
-        """Ensure the dialog finishes mapping without blocking the UI thread."""
-
-        def _finalize() -> None:
-            if dialog is not self.update_dialog:
-                return
-            try:
-                if not dialog.winfo_viewable():
-                    dialog.after(50, _finalize)
-                    return
-            except tk.TclError:
-                return
-            self._center_modal(dialog)
-            self._update_dialog_shown_at = time.monotonic()
-            try:
-                dialog.grab_set()
-            except tk.TclError:
-                pass
-            try:
-                dialog.focus_set()
-            except tk.TclError:
-                pass
-            self._log_update_event("Update dialog shown")
-
-        dialog.after(0, _finalize)
-
-    def _center_modal(self, window: tk.Toplevel) -> None:
-        window.update_idletasks()
-        width = window.winfo_width()
-        height = window.winfo_height()
-        screen_width = window.winfo_screenwidth()
-        screen_height = window.winfo_screenheight()
-        x_position = max((screen_width - width) // 2, 0)
-        y_position = max((screen_height - height) // 3, 0)
-        window.geometry(f"{width}x{height}+{x_position}+{y_position}")
+    def _present_update_view(self) -> None:
+        self._update_dialog_shown_at = time.monotonic()
+        self.deiconify()
+        self.update()
+        self._log_update_event("Update view shown")
 
     def _set_update_dialog_title(self, key: str) -> None:
         self._update_dialog_title_key = key
-        if self.update_dialog is not None:
-            self.update_dialog.title(self._(key))
+        title_text = self._(key)
+        self.title(title_text)
+        if self.update_title_label is not None:
+            self.update_title_var.set(title_text)
 
     def _set_update_dialog_message(self, key: str, **kwargs: object) -> None:
         self._update_message_key = key
@@ -1651,12 +1661,20 @@ class DownloaderUI(tk.Tk):
             self._close_update_dialog()
 
     def _show_main_window(self) -> None:
+        self._build_main_interface()
         self.deiconify()
         self.lift()
         try:
             self.focus_force()
         except tk.TclError:
             pass
+
+    def _on_root_close_attempt(self) -> None:
+        if self.update_dialog is not None and not self._main_interface_initialized:
+            if self._update_dialog_can_close:
+                self._close_update_dialog()
+            return
+        self.destroy()
 
     def _close_update_dialog(self, show_main: bool = True) -> None:
         self._log_update_event(
@@ -1674,17 +1692,18 @@ class DownloaderUI(tk.Tk):
                 self.update_dialog_progress.stop()
             except tk.TclError:
                 pass
-        if self.update_dialog is not None:
+        if self.update_view is not None:
             try:
-                self.update_dialog.grab_release()
+                self.update_view.destroy()
             except tk.TclError:
                 pass
-            self.update_dialog.destroy()
+        self.update_view = None
         self.update_dialog = None
         self.update_dialog_progress = None
         self.update_button_frame = None
         self.update_primary_button = None
         self.update_secondary_button = None
+        self.update_title_label = None
         self._update_message_key = None
         self._update_message_kwargs = {}
         self._update_dialog_title_key = None
