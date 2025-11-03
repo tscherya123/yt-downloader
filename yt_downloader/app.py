@@ -37,6 +37,7 @@ from .utils import (
     is_youtube_video_url as _is_youtube_video_url,
     parse_time_input as _parse_time_input,
     subprocess_no_window_kwargs as _subprocess_no_window_kwargs,
+    yt_dlp_command as _yt_dlp_command,
 )
 from .widgets import TaskRow
 from .worker import DownloadWorker
@@ -529,13 +530,14 @@ class DownloaderUI(tk.Tk):
 
         def worker() -> None:
             try:
+                cmd = _yt_dlp_command(
+                    "--dump-single-json",
+                    "--skip-download",
+                    url,
+                    prefer_gui=False,
+                )
                 output = subprocess.run(  # noqa: S603 - виклик зовнішньої утиліти
-                    [
-                        "yt-dlp",
-                        "--dump-single-json",
-                        "--skip-download",
-                        url,
-                    ],
+                    cmd,
                     check=True,
                     capture_output=True,
                     text=True,
