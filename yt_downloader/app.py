@@ -25,6 +25,7 @@ try:  # Необов'язкова залежність – для обклади
 except Exception:  # pragma: no cover - Pillow необов'язковий під час виконання.
     PIL_AVAILABLE = False
 
+from .backend import BackendError, fetch_video_metadata
 from .localization import (
     DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,
@@ -539,18 +540,7 @@ class DownloaderUI(tk.Tk):
 
         def worker() -> None:
             try:
-                output = subprocess.run(  # noqa: S603 - виклик зовнішньої утиліти
-                    [
-                        "yt-dlp",
-                        "--dump-single-json",
-                        "--skip-download",
-                        url,
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                ).stdout
-                data = json.loads(output)
+                data = fetch_video_metadata(url)
                 title = data.get("title") or "—"
                 thumbnail_url = data.get("thumbnail")
                 duration_value: Optional[float] = None
@@ -583,6 +573,8 @@ class DownloaderUI(tk.Tk):
                         token, title, thumbnail_url, image, duration_value
                     ),
                 )
+            except BackendError as exc:
+                self.after(0, lambda: self._preview_error(token, str(exc)))
             except Exception as exc:  # pylint: disable=broad-except
                 self.after(0, lambda: self._preview_error(token, str(exc)))
             finally:

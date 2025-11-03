@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import datetime as _dt
-import json
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Optional
 
+from .backend import BackendError, download_video, fetch_video_metadata
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
 from .utils import format_timestamp, sanitize_filename, unique_path
 
@@ -93,48 +94,26 @@ class DownloadWorker(threading.Thread):
                 self._log(self._t("log_segment", start=human_start, end=human_end))
 
             clip_requested = self.start_seconds > 0 or self.end_seconds is not None
-            downloader_args: list[str] = []
-            clip_applied_during_download = False
+            clip_arguments: list[str] = []
             if clip_requested:
-                clip_parts: list[str] = []
                 if self.start_seconds > 0:
-                    clip_parts.append(f"-ss {format_timestamp(self.start_seconds)}")
+                    clip_arguments.extend(["-ss", format_timestamp(self.start_seconds)])
                 if self.end_seconds is not None:
-                    clip_parts.append(f"-to {format_timestamp(self.end_seconds)}")
-                if clip_parts:
-                    downloader_args = [
-                        "--downloader",
-                        "ffmpeg",
-                        "--downloader-args",
-                        f"ffmpeg_i:{' '.join(clip_parts)}",
-                    ]
-                    clip_applied_during_download = True
+                    clip_arguments.extend(["-to", format_timestamp(self.end_seconds)])
 
             self._log(self._t("log_download_step"))
-            yt_dlp_cmd = [
-                "yt-dlp",
-                "-f",
-                "bv*+ba/b",
-                "-S",
-                "res,fps,br",
-                "--hls-prefer-ffmpeg",
-                "-N",
-                "8",
-                "-P",
-                str(workdir),
-                "--paths",
-                f"temp:{tempdir}",
-                "-o",
-                "source.%(ext)s",
-            ]
-            yt_dlp_cmd.extend(downloader_args)
-            yt_dlp_cmd.append(self.url)
-            self._run(yt_dlp_cmd, cwd=workdir)
+            try:
+                src = download_video(
+                    url=self.url,
+                    workdir=workdir,
+                    tempdir=tempdir,
+                    clip_arguments=clip_arguments,
+                )
+            except BackendError as exc:
+                raise RuntimeError(str(exc)) from exc
 
-            template_placeholder = workdir / "source.%(ext)s"
-            template_placeholder.unlink(missing_ok=True)
+            clip_applied_during_download = bool(clip_arguments)
 
-            src = next(workdir.glob("source.*"), None)
             if not src:
                 raise RuntimeError(self._t("error_missing_source"))
 
@@ -282,19 +261,10 @@ class DownloadWorker(threading.Thread):
         if self.title:
             return {"title": self.title}
 
-        output = self._run(
-            [
-                "yt-dlp",
-                "--dump-single-json",
-                "--skip-download",
-                self.url,
-            ],
-            capture_output=True,
-        )
         try:
-            return json.loads(output)
-        except json.JSONDecodeError:
-            return {"title": "video"}
+            return fetch_video_metadata(self.url)
+        except BackendError as exc:
+            raise RuntimeError(str(exc)) from exc
 
     def _probe_codecs(self, src: Path) -> tuple[str, str]:
         output = self._run(
@@ -341,12 +311,20 @@ class DownloadWorker(threading.Thread):
         capture_output: bool = False,
     ) -> str:
         self._check_cancelled()
+        creationflags = 0
+        startupinfo = None
+        if sys.platform.startswith("win"):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         process = subprocess.Popen(  # noqa: S603 - свідоме виконання зовнішньої команди
             args,
             cwd=cwd,
             stdout=subprocess.PIPE if capture_output else None,
             stderr=subprocess.PIPE if capture_output else None,
             text=capture_output,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
         )
         with self._process_lock:
             self._active_process = process
