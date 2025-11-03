@@ -18,8 +18,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Checking for updates",
     },
     "update_check_message": {
-        "uk": "Зачекайте, виконується перевірка оновлення…",
-        "en": "Please wait while we check for updates…",
+        "uk": "Перевіряю наявність оновлень…",
+        "en": "Checking for updates…",
     },
     "update_check_no_updates": {
         "uk": "Ви користуєтеся останньою версією {version}.",

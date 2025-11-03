@@ -69,6 +69,7 @@ class DownloaderUI(tk.Tk):
         self._update_primary_button_key: Optional[str] = None
         self._update_secondary_button_key: Optional[str] = None
         self._update_dialog_can_close = False
+        self._update_auto_close_after: Optional[str] = None
         self.pending_update_info: Optional[UpdateInfo] = None
         self.pending_install_result: Optional[InstallResult] = None
         self._update_download_total: Optional[int] = None
@@ -1598,6 +1599,12 @@ class DownloaderUI(tk.Tk):
             pass
 
     def _close_update_dialog(self, show_main: bool = True) -> None:
+        if self._update_auto_close_after is not None:
+            try:
+                self.after_cancel(self._update_auto_close_after)
+            except tk.TclError:
+                pass
+            self._update_auto_close_after = None
         if self.update_dialog_progress is not None:
             try:
                 self.update_dialog_progress.stop()
@@ -1645,10 +1652,9 @@ class DownloaderUI(tk.Tk):
             self._set_update_dialog_message(
                 "update_check_no_updates", version=self.app_version
             )
-            self._configure_update_dialog_buttons(
-                primary=("update_button_continue", lambda: self._close_update_dialog(True))
-            )
-            self._set_update_dialog_closable(True)
+            self._configure_update_dialog_buttons()
+            self._set_update_dialog_closable(False)
+            self._schedule_update_dialog_close()
             return
 
         self.pending_update_info = info
@@ -1685,10 +1691,9 @@ class DownloaderUI(tk.Tk):
             self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
         self._set_update_dialog_title("update_error_title")
         self._set_update_dialog_message("update_check_failed", error=error_message)
-        self._configure_update_dialog_buttons(
-            primary=("update_button_continue", lambda: self._close_update_dialog(True))
-        )
-        self._set_update_dialog_closable(True)
+        self._configure_update_dialog_buttons()
+        self._set_update_dialog_closable(False)
+        self._schedule_update_dialog_close()
 
     def _start_update_download(self, info: UpdateInfo) -> None:
         self.pending_update_info = info
@@ -1817,6 +1822,27 @@ class DownloaderUI(tk.Tk):
             secondary=("update_button_continue", lambda: self._close_update_dialog(True)),
         )
         self._set_update_dialog_closable(True)
+
+    def _schedule_update_dialog_close(self, delay: int = 1200) -> None:
+        if self.update_dialog is None:
+            return
+
+        def _close_if_pending() -> None:
+            self._update_auto_close_after = None
+            if self.update_dialog is not None:
+                self._close_update_dialog(True)
+
+        if self._update_auto_close_after is not None:
+            try:
+                self.after_cancel(self._update_auto_close_after)
+            except tk.TclError:
+                pass
+            self._update_auto_close_after = None
+
+        try:
+            self._update_auto_close_after = str(self.after(delay, _close_if_pending))
+        except tk.TclError:
+            _close_if_pending()
 
     def _exit_after_update(self) -> None:
         self._close_update_dialog(show_main=False)
