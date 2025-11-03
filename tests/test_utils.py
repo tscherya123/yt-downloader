@@ -110,12 +110,16 @@ def test_unique_path_returns_candidate_when_available(tmp_path: Path, filename: 
 
 
 def test_yt_dlp_command_prefers_pythonw_when_available(monkeypatch):
+    monkeypatch.setattr(utils.os, "name", "nt")
     monkeypatch.setattr(utils, "_locate_pythonw", lambda: "C:/Python/pythonw.exe")
+    monkeypatch.setattr(utils, "_locate_python_console", lambda: "C:/Python/python.exe")
     cmd = utils.yt_dlp_command("--version")
     assert cmd == ["C:/Python/pythonw.exe", "-m", "yt_dlp", "--version"]
 
 
 def test_yt_dlp_command_can_skip_gui(monkeypatch):
+    monkeypatch.setattr(utils.os, "name", "nt")
     monkeypatch.setattr(utils, "_locate_pythonw", lambda: "C:/Python/pythonw.exe")
+    monkeypatch.setattr(utils, "_locate_python_console", lambda: "C:/Python/python.exe")
     cmd = utils.yt_dlp_command("--help", prefer_gui=False)
-    assert cmd == ["yt-dlp", "--help"]
+    assert cmd == ["C:/Python/python.exe", "-m", "yt_dlp", "--help"]

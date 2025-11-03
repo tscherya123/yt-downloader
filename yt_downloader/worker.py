@@ -134,7 +134,7 @@ class DownloadWorker(threading.Thread):
             ]
             yt_dlp_args.extend(downloader_args)
             yt_dlp_args.append(self.url)
-            yt_dlp_cmd = yt_dlp_command(*yt_dlp_args)
+            yt_dlp_cmd = yt_dlp_command(*yt_dlp_args, prefer_gui=False)
             self._run(yt_dlp_cmd, cwd=workdir)
 
             template_placeholder = workdir / "source.%(ext)s"

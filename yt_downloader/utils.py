@@ -147,12 +147,7 @@ def subprocess_no_window_kwargs() -> dict[str, object]:
 
 @functools.lru_cache(maxsize=1)
 def _locate_pythonw() -> Optional[str]:
-    """Return a path to ``pythonw.exe`` when available.
-
-    The helper prefers the interpreter next to :data:`sys.executable` and
-    falls back to ``pythonw`` discoverable on ``PATH``.  ``None`` is returned
-    on non-Windows systems or when no GUI interpreter can be located.
-    """
+    """Return a path to ``pythonw.exe`` when available."""
 
     if os.name != "nt":  # pragma: no cover - Windows-specific helper
         return None
@@ -172,11 +167,41 @@ def _locate_pythonw() -> Optional[str]:
     return None
 
 
-def yt_dlp_command(*args: str, prefer_gui: bool = True) -> list[str]:
-    """Return a ``yt-dlp`` invocation preferring a GUI interpreter on Windows."""
+@functools.lru_cache(maxsize=1)
+def _locate_python_console() -> Optional[str]:
+    """Return a console-capable Python interpreter on Windows."""
 
-    if prefer_gui:
-        pythonw = _locate_pythonw()
-        if pythonw is not None:
-            return [pythonw, "-m", "yt_dlp", *args]
+    if os.name != "nt":  # pragma: no cover - Windows-specific helper
+        return None
+
+    executable = Path(sys.executable)
+    if executable.name.lower() == "python.exe":
+        return str(executable)
+
+    sibling = executable.with_name("python.exe")
+    if sibling.exists():
+        return str(sibling)
+
+    discovered = shutil.which("python")
+    if discovered:
+        return discovered
+
+    # Fall back to whatever interpreter is running the app, even if it is
+    # ``pythonw.exe``.  This at least keeps the command functional.
+    return str(executable)
+
+
+def yt_dlp_command(*args: str, prefer_gui: bool = True) -> list[str]:
+    """Return a ``yt-dlp`` invocation suited for the current platform."""
+
+    if os.name == "nt":  # pragma: no cover - Windows-specific helper
+        if prefer_gui:
+            pythonw = _locate_pythonw()
+            if pythonw is not None:
+                return [pythonw, "-m", "yt_dlp", *args]
+
+        python_console = _locate_python_console()
+        if python_console is not None:
+            return [python_console, "-m", "yt_dlp", *args]
+
     return ["yt-dlp", *args]
