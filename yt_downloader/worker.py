@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import os
 import queue
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ from typing import Optional
 
 from .backend import BackendError, download_video, fetch_video_metadata
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
-from .utils import format_timestamp, sanitize_filename, unique_path
+from .utils import format_timestamp, resolve_executable, sanitize_filename, unique_path
 
 
 class DownloadCancelled(Exception):
@@ -51,6 +52,8 @@ class DownloadWorker(threading.Thread):
         self._process_lock = threading.Lock()
         self._active_process: Optional[subprocess.Popen[str]] = None
         self._cancelled = False
+        self._ffmpeg_path: Optional[Path] = None
+        self._ffprobe_path: Optional[Path] = None
 
     # pylint: disable=too-many-locals
     def run(self) -> None:  # noqa: C901 - відтворюємо логіку батника для прозорості
@@ -65,6 +68,8 @@ class DownloadWorker(threading.Thread):
 
             if self.end_seconds is not None and self.end_seconds <= self.start_seconds:
                 raise ValueError(self._t("error_end_before_start"))
+
+            self._initialize_backends()
 
             self._log(self._t("log_root", root=self.root))
             self.root.mkdir(parents=True, exist_ok=True)
@@ -133,7 +138,7 @@ class DownloadWorker(threading.Thread):
                 final_destination = final_path
             else:
                 self._status("converting")
-                ffmpeg_args = ["ffmpeg", "-hide_banner", "-stats", "-y"]
+                ffmpeg_args = [self._ffmpeg(), "-hide_banner", "-stats", "-y"]
                 clip_during_ffmpeg = (
                     (self.start_seconds > 0 or self.end_seconds is not None)
                     and not clip_applied_during_download
@@ -230,7 +235,7 @@ class DownloadWorker(threading.Thread):
         # Обчислюємо тривалість (у секундах) і розмір файлу (у байтах), щоб оцінити бітрейт
         duration = self._run(
             [
-                "ffprobe",
+                self._ffprobe(),
                 "-v",
                 "error",
                 "-show_entries",
@@ -269,7 +274,7 @@ class DownloadWorker(threading.Thread):
     def _probe_codecs(self, src: Path) -> tuple[str, str]:
         output = self._run(
             [
-                "ffprobe",
+                self._ffprobe(),
                 "-v",
                 "error",
                 "-select_streams",
@@ -286,7 +291,7 @@ class DownloadWorker(threading.Thread):
 
         output = self._run(
             [
-                "ffprobe",
+                self._ffprobe(),
                 "-v",
                 "error",
                 "-select_streams",
@@ -382,6 +387,56 @@ class DownloadWorker(threading.Thread):
     def _check_cancelled(self) -> None:
         if self._cancel_event.is_set():
             raise DownloadCancelled()
+
+    def _initialize_backends(self) -> None:
+        self._ffmpeg_path = resolve_executable("ffmpeg.exe", "ffmpeg")
+        if self._ffmpeg_path is None:
+            raise RuntimeError(self._t("error_missing_ffmpeg"))
+
+        self._ffprobe_path = resolve_executable("ffprobe.exe", "ffprobe")
+        if self._ffprobe_path is None:
+            raise RuntimeError(self._t("error_missing_ffprobe"))
+
+        self._ensure_backends_on_path()
+
+    def _ensure_backends_on_path(self) -> None:
+        directories = []
+        if self._ffmpeg_path is not None:
+            directories.append(self._ffmpeg_path.parent)
+        if self._ffprobe_path is not None:
+            directories.append(self._ffprobe_path.parent)
+
+        if not directories:
+            return
+
+        existing = os.environ.get("PATH")
+        segments = existing.split(os.pathsep) if existing else []
+        added = False
+        for directory in directories:
+            candidate = str(directory)
+            if candidate not in segments:
+                segments.insert(0, candidate)
+                added = True
+        if added:
+            os.environ["PATH"] = os.pathsep.join(segments)
+
+    def _ffmpeg(self) -> str:
+        if self._ffmpeg_path is None or not self._ffmpeg_path.exists():
+            self._ffmpeg_path = resolve_executable("ffmpeg.exe", "ffmpeg")
+            if self._ffmpeg_path is not None:
+                self._ensure_backends_on_path()
+        if self._ffmpeg_path is None:
+            raise RuntimeError(self._t("error_missing_ffmpeg"))
+        return str(self._ffmpeg_path)
+
+    def _ffprobe(self) -> str:
+        if self._ffprobe_path is None or not self._ffprobe_path.exists():
+            self._ffprobe_path = resolve_executable("ffprobe.exe", "ffprobe")
+            if self._ffprobe_path is not None:
+                self._ensure_backends_on_path()
+        if self._ffprobe_path is None:
+            raise RuntimeError(self._t("error_missing_ffprobe"))
+        return str(self._ffprobe_path)
 
     def _log(self, message: str) -> None:
         self._emit("log", message=message)
