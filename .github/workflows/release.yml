@@ -54,20 +54,38 @@ jobs:
           import os
           import re
 
-          version_file = Path("yt_downloader") / "__init__.py"
-          text = version_file.read_text(encoding="utf-8")
+          version_files = [
+              Path("yt_downloader") / "__init__.py",
+              Path("yt_downloader") / "version.py",
+          ]
 
-          match = re.search(r'__version__\s*=\s*"(?P<version>\d+\.\d+\.\d+)"', text)
+          version_file = None
+          text = None
+          match = None
+
+          pattern = re.compile(r'__version__\s*=\s*"(?P<version>\d+\.\d+\.\d+)"')
+
+          for candidate in version_files:
+              if not candidate.exists():
+                  continue
+              candidate_text = candidate.read_text(encoding="utf-8")
+              candidate_match = pattern.search(candidate_text)
+              if candidate_match:
+                  version_file = candidate
+                  text = candidate_text
+                  match = candidate_match
+                  break
+
           if not match:
-              raise SystemExit("Unable to find __version__ in yt_downloader/__init__.py")
+              expected_locations = ", ".join(str(path) for path in version_files)
+              raise SystemExit(f"Unable to find __version__ in any of: {expected_locations}")
 
           major, minor, patch = map(int, match.group("version").split("."))
           patch += 1
           new_version = f"{major}.{minor}.{patch}"
 
-          new_text = re.sub(
-              r'(__version__\s*=\s*")\d+\.\d+\.\d+(\")',
-              lambda match: f"{match.group(1)}{new_version}{match.group(2)}",
+          new_text = pattern.sub(
+              lambda m: f'__version__ = "{new_version}"',
               text,
               count=1,
           )
