@@ -9,6 +9,84 @@ DEFAULT_LANGUAGE = "uk"
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "app_title": {"uk": "YouTube Downloader", "en": "YouTube Downloader"},
+    "app_title_with_version": {
+        "uk": "YouTube Downloader {version}",
+        "en": "YouTube Downloader {version}",
+    },
+    "update_check_title": {
+        "uk": "Перевірка оновлень",
+        "en": "Checking for updates",
+    },
+    "update_check_message": {
+        "uk": "Зачекайте, виконується перевірка оновлення…",
+        "en": "Please wait while we check for updates…",
+    },
+    "update_check_no_updates": {
+        "uk": "Ви користуєтеся останньою версією {version}.",
+        "en": "You are running the latest version {version}.",
+    },
+    "update_button_continue": {"uk": "Продовжити", "en": "Continue"},
+    "update_available_title": {
+        "uk": "Доступне оновлення",
+        "en": "Update available",
+    },
+    "update_available_manual": {
+        "uk": "Доступна версія {latest}. Відкрийте сторінку релізу, щоб завантажити оновлення вручну.",
+        "en": "Version {latest} is available. Open the release page to download it manually.",
+    },
+    "update_button_open_page": {
+        "uk": "Відкрити сторінку",
+        "en": "Open page",
+    },
+    "update_button_later": {"uk": "Потім", "en": "Later"},
+    "update_available_message": {
+        "uk": "Доступна нова версія {latest}. Поточна версія {current}. Оновити зараз?",
+        "en": "Version {latest} is available. Current version is {current}. Update now?",
+    },
+    "update_button_install": {"uk": "Оновити", "en": "Update"},
+    "update_error_title": {"uk": "Оновлення", "en": "Update"},
+    "update_check_failed": {
+        "uk": "Не вдалося перевірити оновлення: {error}",
+        "en": "Failed to check for updates: {error}",
+    },
+    "update_download_title": {
+        "uk": "Завантаження оновлення",
+        "en": "Downloading update",
+    },
+    "update_download_preparing": {
+        "uk": "Підготовка до завантаження версії {version}…",
+        "en": "Preparing download for version {version}…",
+    },
+    "update_download_progress": {
+        "uk": "Завантажено {percent}%…",
+        "en": "Downloaded {percent}%…",
+    },
+    "update_install_title": {
+        "uk": "Встановлення оновлення",
+        "en": "Installing update",
+    },
+    "update_install_success_launched": {
+        "uk": "Версію {version} встановлено та запущено. Поточне вікно буде закрито.",
+        "en": "Version {version} has been installed and launched. This window will close.",
+    },
+    "update_button_exit": {"uk": "Закрити", "en": "Close"},
+    "update_install_launch_failed": {
+        "uk": "Версію {version} збережено в {path}, але не вдалося запустити файл: {error}",
+        "en": "Version {version} was saved to {path}, but launching it failed: {error}",
+    },
+    "update_install_success_manual": {
+        "uk": "Оновлення {version} завантажено до {path}. Запустіть нову версію вручну.",
+        "en": "Update {version} was downloaded to {path}. Launch the new version manually.",
+    },
+    "update_button_open_folder": {
+        "uk": "Відкрити теку",
+        "en": "Open folder",
+    },
+    "update_button_retry": {"uk": "Повторити", "en": "Retry"},
+    "update_install_failed": {
+        "uk": "Не вдалося встановити оновлення: {error}",
+        "en": "Failed to install update: {error}",
+    },
     "url_label": {"uk": "YouTube URL", "en": "YouTube URL"},
     "search_button": {"uk": "Знайти відео", "en": "Find video"},
     "root_label": {"uk": "Коренева тека", "en": "Root folder"},
