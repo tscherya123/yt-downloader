@@ -21,6 +21,8 @@ def test_normalize_version_strips_prefix() -> None:
     assert normalize_version("v1.2.3") == (1, 2, 3)
     assert normalize_version("1.2.3") == (1, 2, 3)
     assert normalize_version(" 2.0 ") == (2, 0)
+    assert normalize_version("1.0.0-beta") == (1, 0, 0, -1)
+    assert normalize_version("1.0.0-beta1") == (1, 0, 0, -1, 1)
 
 
 @pytest.mark.parametrize(
@@ -30,6 +32,9 @@ def test_normalize_version_strips_prefix() -> None:
         ("0.1.0", "0.1.5", False),
         ("1.0.0", "1.0", False),
         ("1.0.1", "1.0.1", False),
+        ("1.0.0", "1.0.0-beta", True),
+        ("1.0.0-beta2", "1.0.0-beta1", True),
+        ("1.0.0-beta", "1.0.0", False),
     ],
 )
 def test_is_version_newer(latest: str, current: str, expected: bool) -> None:

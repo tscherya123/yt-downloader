@@ -63,6 +63,40 @@ _VERSION_SPLIT_RE = re.compile(r"[._-]")
 _DIGITS_RE = re.compile(r"(\d+)")
 
 
+def _normalize_component(component: str) -> tuple[int, ...]:
+    """Return a tuple representation for a single version component.
+
+    Numeric components are returned as ``(value,)``. Components that contain
+    non-numeric markers (e.g. ``"beta"``) are treated as pre-release
+    identifiers and converted into negative sentinels so that, for example,
+    ``"1.0.0-beta"`` compares as older than ``"1.0.0"``. Mixed alphanumeric
+    components such as ``"beta1"`` or ``"1rc1"`` keep their numeric portion
+    but are still flagged as pre-release values.
+    """
+
+    text = component.strip()
+    if not text:
+        return ()
+    if text.isdigit():
+        return (int(text),)
+
+    match = _DIGITS_RE.search(text)
+    if not match:
+        return (-1,)
+
+    values: list[int] = []
+    prefix = text[: match.start()].strip()
+    suffix = text[match.end() :].strip()
+    if prefix:
+        values.append(-1)
+    values.append(int(match.group(1)))
+    if suffix:
+        values.append(-1)
+    if not values:
+        return (0,)
+    return tuple(values)
+
+
 def normalize_version(value: str) -> tuple[int, ...]:
     """Return a tuple representation of ``value`` suitable for comparison."""
 
@@ -71,17 +105,10 @@ def normalize_version(value: str) -> tuple[int, ...]:
         return (0,)
     parts: list[int] = []
     for component in _VERSION_SPLIT_RE.split(cleaned):
-        if not component:
+        normalized = _normalize_component(component)
+        if not normalized:
             continue
-        try:
-            parts.append(int(component))
-            continue
-        except ValueError:
-            match = _DIGITS_RE.search(component)
-            if match:
-                parts.append(int(match.group(1)))
-                continue
-        parts.append(0)
+        parts.extend(normalized)
     return tuple(parts) if parts else (0,)
 
 
