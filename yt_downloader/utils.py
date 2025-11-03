@@ -183,12 +183,10 @@ def _locate_python_console() -> Optional[str]:
         return str(sibling)
 
     discovered = shutil.which("python")
-    if discovered:
+    if discovered and Path(discovered).name.lower() == "python.exe":
         return discovered
 
-    # Fall back to whatever interpreter is running the app, even if it is
-    # ``pythonw.exe``.  This at least keeps the command functional.
-    return str(executable)
+    return None
 
 
 def yt_dlp_command(*args: str, prefer_gui: bool = True) -> list[str]:

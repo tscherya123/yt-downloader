@@ -123,3 +123,11 @@ def test_yt_dlp_command_can_skip_gui(monkeypatch):
     monkeypatch.setattr(utils, "_locate_python_console", lambda: "C:/Python/python.exe")
     cmd = utils.yt_dlp_command("--help", prefer_gui=False)
     assert cmd == ["C:/Python/python.exe", "-m", "yt_dlp", "--help"]
+
+
+def test_yt_dlp_command_avoids_pythonw_when_console_missing(monkeypatch):
+    monkeypatch.setattr(utils.os, "name", "nt")
+    monkeypatch.setattr(utils, "_locate_pythonw", lambda: "C:/Python/pythonw.exe")
+    monkeypatch.setattr(utils, "_locate_python_console", lambda: None)
+    cmd = utils.yt_dlp_command("--version", prefer_gui=False)
+    assert cmd == ["yt-dlp", "--version"]
