@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import functools
-import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from typing import Optional
@@ -116,90 +111,3 @@ def unique_path(candidate: Path) -> Path:
         if not new_candidate.exists():
             return new_candidate
         counter += 1
-
-
-def subprocess_no_window_kwargs() -> dict[str, object]:
-    """Return keyword arguments to hide console windows on Windows.
-
-    On non-Windows systems the function returns an empty dictionary.
-    The returned dictionary can be safely expanded into calls to
-    :mod:`subprocess` helpers.
-    """
-
-    if os.name != "nt":  # pragma: no cover - Windows-specific behaviour
-        return {}
-
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:  # pragma: no cover - executed only on Windows
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
-        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
-    except AttributeError:  # pragma: no cover - safety net for exotic runtimes
-        startupinfo = None
-
-    kwargs: dict[str, object] = {}
-    if creationflags:
-        kwargs["creationflags"] = creationflags
-    if startupinfo is not None:
-        kwargs["startupinfo"] = startupinfo
-    return kwargs
-
-
-@functools.lru_cache(maxsize=1)
-def _locate_pythonw() -> Optional[str]:
-    """Return a path to ``pythonw.exe`` when available."""
-
-    if os.name != "nt":  # pragma: no cover - Windows-specific helper
-        return None
-
-    executable = Path(sys.executable)
-    if executable.name.lower() == "pythonw.exe":
-        return str(executable)
-
-    sibling = executable.with_name("pythonw.exe")
-    if sibling.exists():
-        return str(sibling)
-
-    discovered = shutil.which("pythonw")
-    if discovered:
-        return discovered
-
-    return None
-
-
-@functools.lru_cache(maxsize=1)
-def _locate_python_console() -> Optional[str]:
-    """Return a console-capable Python interpreter on Windows."""
-
-    if os.name != "nt":  # pragma: no cover - Windows-specific helper
-        return None
-
-    executable = Path(sys.executable)
-    if executable.name.lower() == "python.exe":
-        return str(executable)
-
-    sibling = executable.with_name("python.exe")
-    if sibling.exists():
-        return str(sibling)
-
-    discovered = shutil.which("python")
-    if discovered and Path(discovered).name.lower() == "python.exe":
-        return discovered
-
-    return None
-
-
-def yt_dlp_command(*args: str, prefer_gui: bool = True) -> list[str]:
-    """Return a ``yt-dlp`` invocation suited for the current platform."""
-
-    if os.name == "nt":  # pragma: no cover - Windows-specific helper
-        if prefer_gui:
-            pythonw = _locate_pythonw()
-            if pythonw is not None:
-                return [pythonw, "-m", "yt_dlp", *args]
-
-        python_console = _locate_python_console()
-        if python_console is not None:
-            return [python_console, "-m", "yt_dlp", *args]
-
-    return ["yt-dlp", *args]

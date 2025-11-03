@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import io
 import sys
 import datetime as _dt
@@ -36,8 +35,6 @@ from .utils import (
     format_timestamp as _format_timestamp,
     is_youtube_video_url as _is_youtube_video_url,
     parse_time_input as _parse_time_input,
-    subprocess_no_window_kwargs as _subprocess_no_window_kwargs,
-    yt_dlp_command as _yt_dlp_command,
 )
 from .widgets import TaskRow
 from .worker import DownloadWorker
@@ -99,7 +96,7 @@ class DownloaderUI(tk.Tk):
         self.preview_token = 0
         self.preview_info: dict[str, str] = {}
         self.duration_seconds: Optional[float] = None
-        self.thumbnail_image: Optional[tk.PhotoImage] = None
+        self.thumbnail_image: Optional["ImageTk.PhotoImage"] = None
 
         container = ttk.Frame(self, padding=12)
         container.grid(row=0, column=0, sticky="nsew")
@@ -201,9 +198,15 @@ class DownloaderUI(tk.Tk):
         )
         self.preview_duration_label.grid(row=1, column=0, sticky="w", padx=12)
 
-        self.preview_image_label = tk.Label(preview_frame)
+        if PIL_AVAILABLE:
+            self.preview_image_label = tk.Label(preview_frame)
+        else:
+            self.preview_image_label = tk.Label(preview_frame)
         self.preview_image_label.grid(row=2, column=0, padx=12, pady=6, sticky="nsew")
         self.preview_image_text_key = None
+        if not PIL_AVAILABLE:
+            self.preview_image_text_key = "preview_thumbnail_pillow_required"
+            self.preview_image_label.configure(text=self._("preview_thumbnail_pillow_required"))
 
         clip_frame = ttk.Frame(preview_frame)
         clip_frame.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 6))
@@ -475,8 +478,11 @@ class DownloaderUI(tk.Tk):
         self._set_preview_title(None)
         self._set_preview_duration(None)
         self._set_preview_status("idle")
-        self.preview_image_label.configure(image="", text="")
-        self.preview_image_text_key = None
+        if PIL_AVAILABLE:
+            self.preview_image_label.configure(image="", text="")
+            self.preview_image_text_key = None
+        else:
+            self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
         self.download_button.state(["disabled"])
         self._set_clip_controls_enabled(False)
@@ -524,24 +530,25 @@ class DownloaderUI(tk.Tk):
         self._set_preview_title(None)
         self._set_preview_duration(None)
         self._set_clip_controls_enabled(False)
-        self.preview_image_label.configure(image="", text="")
-        self.preview_image_text_key = None
+        if PIL_AVAILABLE:
+            self.preview_image_label.configure(image="", text="")
+            self.preview_image_text_key = None
+        else:
+            self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
 
         def worker() -> None:
             try:
-                cmd = _yt_dlp_command(
-                    "--dump-single-json",
-                    "--skip-download",
-                    url,
-                    prefer_gui=False,
-                )
                 output = subprocess.run(  # noqa: S603 - виклик зовнішньої утиліти
-                    cmd,
+                    [
+                        "yt-dlp",
+                        "--dump-single-json",
+                        "--skip-download",
+                        url,
+                    ],
                     check=True,
                     capture_output=True,
                     text=True,
-                    **_subprocess_no_window_kwargs(),
                 ).stdout
                 data = json.loads(output)
                 title = data.get("title") or "—"
@@ -561,11 +568,13 @@ class DownloaderUI(tk.Tk):
                             duration_value = parsed
 
                 image = None
-                if thumbnail_url:
+                if thumbnail_url and PIL_AVAILABLE:
                     try:
                         with urllib.request.urlopen(thumbnail_url, timeout=10) as response:
                             payload = response.read()
-                        image = self._prepare_thumbnail_image(payload)
+                        pil_image = Image.open(io.BytesIO(payload))
+                        pil_image.thumbnail((480, 270))
+                        image = ImageTk.PhotoImage(pil_image)
                     except Exception:
                         image = None
                 self.after(
@@ -590,7 +599,7 @@ class DownloaderUI(tk.Tk):
         token: int,
         title: str,
         thumbnail_url: Optional[str],
-        image: Optional[tk.PhotoImage],
+        image: Optional["ImageTk.PhotoImage"],
         duration: Optional[float],
     ) -> None:
         if token != self.preview_token:
@@ -616,89 +625,20 @@ class DownloaderUI(tk.Tk):
             self.download_button.state(["disabled"])
             self._set_preview_status("no_duration")
 
-        if image is not None:
+        if PIL_AVAILABLE and image is not None:
             self.thumbnail_image = image
             self.preview_image_label.configure(image=image, text="")
             self.preview_image_text_key = None
+        elif not PIL_AVAILABLE and thumbnail_url:
+            self._set_preview_image_text("preview_thumbnail_unavailable")
+            self.thumbnail_image = None
         else:
-            if thumbnail_url:
-                self._set_preview_image_text("preview_thumbnail_unavailable")
-            else:
+            if PIL_AVAILABLE:
                 self.preview_image_label.configure(text="", image="")
                 self.preview_image_text_key = None
+            else:
+                self._set_preview_image_text("preview_thumbnail_pillow_required")
             self.thumbnail_image = None
-
-    def _prepare_thumbnail_image(self, payload: bytes) -> Optional[tk.PhotoImage]:
-        """Create a Tk-compatible thumbnail image from raw bytes."""
-
-        if PIL_AVAILABLE:
-            try:
-                pil_image = Image.open(io.BytesIO(payload))
-                pil_image.thumbnail((480, 270))
-                return ImageTk.PhotoImage(pil_image)
-            except Exception:
-                pass
-        return self._photoimage_from_bytes(payload)
-
-    def _photoimage_from_bytes(self, payload: bytes) -> Optional[tk.PhotoImage]:
-        detected_format = self._detect_image_format(payload)
-        encoded = base64.b64encode(payload).decode("ascii")
-        if detected_format:
-            try:
-                return tk.PhotoImage(data=encoded, format=detected_format)
-            except (tk.TclError, RuntimeError, ValueError):
-                pass
-        try:
-            return tk.PhotoImage(data=encoded)
-        except (tk.TclError, RuntimeError, ValueError):
-            pass
-
-        png_payload = self._transcode_image_to_png(payload)
-        if not png_payload:
-            return None
-
-        try:
-            encoded_png = base64.b64encode(png_payload).decode("ascii")
-            return tk.PhotoImage(data=encoded_png, format="png")
-        except (tk.TclError, RuntimeError, ValueError):
-            try:
-                return tk.PhotoImage(data=encoded_png)
-            except (tk.TclError, RuntimeError, ValueError):
-                return None
-
-    def _detect_image_format(self, payload: bytes) -> Optional[str]:
-        if payload.startswith(b"\x89PNG\r\n\x1a\n"):
-            return "png"
-        if payload.startswith(b"\xff\xd8\xff"):
-            return "jpeg"
-        if payload.startswith(b"GIF87a") or payload.startswith(b"GIF89a"):
-            return "gif"
-        return None
-
-    def _transcode_image_to_png(self, payload: bytes) -> Optional[bytes]:
-        try:
-            result = subprocess.run(  # noqa: S603 - свідоме виконання зовнішньої команди
-                [
-                    "ffmpeg",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    "pipe:0",
-                    "-vf",
-                    "scale=if(gt(iw,480),480,iw):-1",
-                    "-f",
-                    "png",
-                    "pipe:1",
-                ],
-                input=payload,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                **_subprocess_no_window_kwargs(),
-            )
-        except (FileNotFoundError, subprocess.CalledProcessError, OSError):
-            return None
-        return result.stdout or None
 
     def _preview_error(self, token: int, message: str) -> None:
         if token != self.preview_token:
@@ -722,8 +662,11 @@ class DownloaderUI(tk.Tk):
         self.duration_seconds = None
         self._set_preview_title(None)
         self._set_preview_duration(None)
-        self.preview_image_label.configure(text="", image="")
-        self.preview_image_text_key = None
+        if PIL_AVAILABLE:
+            self.preview_image_label.configure(text="", image="")
+            self.preview_image_text_key = None
+        else:
+            self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
         self._set_preview_status("idle")
         self.download_button.state(["disabled"])
@@ -1481,22 +1424,11 @@ class DownloaderUI(tk.Tk):
         folder = path.parent
         try:
             if sys.platform.startswith("win"):
-                subprocess.Popen(
-                    ["explorer", "/select,", str(path)],
-                    **_subprocess_no_window_kwargs(),
-                )
+                subprocess.Popen(["explorer", "/select,", str(path)])
             elif sys.platform == "darwin":
-                subprocess.Popen(
-                    ["open", "-R", str(path)],
-                    close_fds=True,
-                    **_subprocess_no_window_kwargs(),
-                )
+                subprocess.Popen(["open", "-R", str(path)], close_fds=True)
             else:
-                subprocess.Popen(
-                    ["xdg-open", str(folder)],
-                    close_fds=True,
-                    **_subprocess_no_window_kwargs(),
-                )
+                subprocess.Popen(["xdg-open", str(folder)], close_fds=True)
         except Exception as exc:  # pylint: disable=broad-except
             messagebox.showerror(
                 self._("error_root_title"),
