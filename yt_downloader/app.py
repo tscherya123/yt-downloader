@@ -1563,18 +1563,34 @@ class DownloaderUI(tk.Tk):
         self.update_dialog = dialog
         self._configure_update_dialog_buttons()
         dialog.deiconify()
-        try:
-            dialog.wait_visibility()
-        except tk.TclError:
-            pass
-        self._center_modal(dialog)
-        self._update_dialog_shown_at = time.monotonic()
-        try:
-            dialog.grab_set()
-        except tk.TclError:
-            pass
-        dialog.focus_set()
-        self._log_update_event("Update dialog shown")
+        dialog.update_idletasks()
+        self._schedule_update_dialog_presentation(dialog)
+
+    def _schedule_update_dialog_presentation(self, dialog: tk.Toplevel) -> None:
+        """Ensure the dialog finishes mapping without blocking the UI thread."""
+
+        def _finalize() -> None:
+            if dialog is not self.update_dialog:
+                return
+            try:
+                if not dialog.winfo_viewable():
+                    dialog.after(50, _finalize)
+                    return
+            except tk.TclError:
+                return
+            self._center_modal(dialog)
+            self._update_dialog_shown_at = time.monotonic()
+            try:
+                dialog.grab_set()
+            except tk.TclError:
+                pass
+            try:
+                dialog.focus_set()
+            except tk.TclError:
+                pass
+            self._log_update_event("Update dialog shown")
+
+        dialog.after(0, _finalize)
 
     def _center_modal(self, window: tk.Toplevel) -> None:
         window.update_idletasks()
