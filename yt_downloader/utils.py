@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from typing import Optional
@@ -126,10 +129,7 @@ def subprocess_no_window_kwargs() -> dict[str, object]:
     if os.name != "nt":  # pragma: no cover - Windows-specific behaviour
         return {}
 
-    creationflags = (
-        getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        | getattr(subprocess, "DETACHED_PROCESS", 0)
-    )
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:  # pragma: no cover - executed only on Windows
         startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
         startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
@@ -137,7 +137,46 @@ def subprocess_no_window_kwargs() -> dict[str, object]:
     except AttributeError:  # pragma: no cover - safety net for exotic runtimes
         startupinfo = None
 
-    kwargs: dict[str, object] = {"creationflags": creationflags}
+    kwargs: dict[str, object] = {}
+    if creationflags:
+        kwargs["creationflags"] = creationflags
     if startupinfo is not None:
         kwargs["startupinfo"] = startupinfo
     return kwargs
+
+
+@functools.lru_cache(maxsize=1)
+def _locate_pythonw() -> Optional[str]:
+    """Return a path to ``pythonw.exe`` when available.
+
+    The helper prefers the interpreter next to :data:`sys.executable` and
+    falls back to ``pythonw`` discoverable on ``PATH``.  ``None`` is returned
+    on non-Windows systems or when no GUI interpreter can be located.
+    """
+
+    if os.name != "nt":  # pragma: no cover - Windows-specific helper
+        return None
+
+    executable = Path(sys.executable)
+    if executable.name.lower() == "pythonw.exe":
+        return str(executable)
+
+    sibling = executable.with_name("pythonw.exe")
+    if sibling.exists():
+        return str(sibling)
+
+    discovered = shutil.which("pythonw")
+    if discovered:
+        return discovered
+
+    return None
+
+
+def yt_dlp_command(*args: str, prefer_gui: bool = True) -> list[str]:
+    """Return a ``yt-dlp`` invocation preferring a GUI interpreter on Windows."""
+
+    if prefer_gui:
+        pythonw = _locate_pythonw()
+        if pythonw is not None:
+            return [pythonw, "-m", "yt_dlp", *args]
+    return ["yt-dlp", *args]
