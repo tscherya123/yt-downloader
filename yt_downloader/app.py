@@ -12,6 +12,7 @@ import subprocess
 import threading
 import urllib.request
 import webbrowser
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -70,6 +71,7 @@ class DownloaderUI(tk.Tk):
         self._update_secondary_button_key: Optional[str] = None
         self._update_dialog_can_close = False
         self._update_auto_close_after: Optional[str] = None
+        self._update_dialog_shown_at: Optional[float] = None
         self.pending_update_info: Optional[UpdateInfo] = None
         self.pending_install_result: Optional[InstallResult] = None
         self._update_download_total: Optional[int] = None
@@ -1526,6 +1528,7 @@ class DownloaderUI(tk.Tk):
         self._configure_update_dialog_buttons()
         dialog.deiconify()
         self._center_modal(dialog)
+        self._update_dialog_shown_at = time.monotonic()
         try:
             dialog.grab_set()
         except tk.TclError:
@@ -1627,6 +1630,7 @@ class DownloaderUI(tk.Tk):
         self._update_primary_button_key = None
         self._update_secondary_button_key = None
         self._update_dialog_can_close = False
+        self._update_dialog_shown_at = None
         self.pending_update_info = None
         self.pending_install_result = None
         self._update_download_total = None
@@ -1831,6 +1835,12 @@ class DownloaderUI(tk.Tk):
             self._update_auto_close_after = None
             if self.update_dialog is not None:
                 self._close_update_dialog(True)
+
+        min_visible_ms = 1000
+        if self._update_dialog_shown_at is not None:
+            elapsed_ms = int((time.monotonic() - self._update_dialog_shown_at) * 1000)
+            remaining_to_min = max(0, min_visible_ms - elapsed_ms)
+            delay = max(delay, remaining_to_min)
 
         if self._update_auto_close_after is not None:
             try:
