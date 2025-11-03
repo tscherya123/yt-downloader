@@ -534,6 +534,7 @@ class DownloaderUI(tk.Tk):
                     "--dump-single-json",
                     "--skip-download",
                     url,
+                    prefer_gui=False,
                 )
                 output = subprocess.run(  # noqa: S603 - виклик зовнішньої утиліти
                     cmd,

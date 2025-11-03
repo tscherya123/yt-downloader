@@ -172,10 +172,11 @@ def _locate_pythonw() -> Optional[str]:
     return None
 
 
-def yt_dlp_command(*args: str) -> list[str]:
+def yt_dlp_command(*args: str, prefer_gui: bool = True) -> list[str]:
     """Return a ``yt-dlp`` invocation preferring a GUI interpreter on Windows."""
 
-    pythonw = _locate_pythonw()
-    if pythonw is not None:
-        return [pythonw, "-m", "yt_dlp", *args]
+    if prefer_gui:
+        pythonw = _locate_pythonw()
+        if pythonw is not None:
+            return [pythonw, "-m", "yt_dlp", *args]
     return ["yt-dlp", *args]

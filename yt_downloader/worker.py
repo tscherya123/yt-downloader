@@ -293,6 +293,7 @@ class DownloadWorker(threading.Thread):
                 "--dump-single-json",
                 "--skip-download",
                 self.url,
+                prefer_gui=False,
             ),
             capture_output=True,
         )
