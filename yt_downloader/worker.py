@@ -12,13 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
-from .utils import (
-    format_timestamp,
-    sanitize_filename,
-    subprocess_no_window_kwargs,
-    unique_path,
-    yt_dlp_command,
-)
+from .utils import format_timestamp, sanitize_filename, unique_path
 
 
 class DownloadCancelled(Exception):
@@ -117,7 +111,8 @@ class DownloadWorker(threading.Thread):
                     clip_applied_during_download = True
 
             self._log(self._t("log_download_step"))
-            yt_dlp_args = [
+            yt_dlp_cmd = [
+                "yt-dlp",
                 "-f",
                 "bv*+ba/b",
                 "-S",
@@ -132,9 +127,8 @@ class DownloadWorker(threading.Thread):
                 "-o",
                 "source.%(ext)s",
             ]
-            yt_dlp_args.extend(downloader_args)
-            yt_dlp_args.append(self.url)
-            yt_dlp_cmd = yt_dlp_command(*yt_dlp_args, prefer_gui=False)
+            yt_dlp_cmd.extend(downloader_args)
+            yt_dlp_cmd.append(self.url)
             self._run(yt_dlp_cmd, cwd=workdir)
 
             template_placeholder = workdir / "source.%(ext)s"
@@ -289,12 +283,12 @@ class DownloadWorker(threading.Thread):
             return {"title": self.title}
 
         output = self._run(
-            yt_dlp_command(
+            [
+                "yt-dlp",
                 "--dump-single-json",
                 "--skip-download",
                 self.url,
-                prefer_gui=False,
-            ),
+            ],
             capture_output=True,
         )
         try:
@@ -353,7 +347,6 @@ class DownloadWorker(threading.Thread):
             stdout=subprocess.PIPE if capture_output else None,
             stderr=subprocess.PIPE if capture_output else None,
             text=capture_output,
-            **subprocess_no_window_kwargs(),
         )
         with self._process_lock:
             self._active_process = process
