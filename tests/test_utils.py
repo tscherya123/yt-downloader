@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import sys
 
@@ -107,3 +108,40 @@ def test_unique_path_returns_candidate_when_available(tmp_path: Path, filename: 
     candidate = tmp_path / filename
     candidate.parent.mkdir(parents=True, exist_ok=True)
     assert utils.unique_path(candidate) == candidate
+
+
+def test_resolve_executable_finds_binary_in_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    binary = tmp_path / "custom-tool.exe"
+    binary.write_text("echo test")
+    try:
+        binary.chmod(0o755)
+    except PermissionError:
+        pass
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    resolved = utils.resolve_executable("custom-tool.exe", "custom-tool")
+
+    assert resolved == binary
+
+
+def test_resolve_executable_uses_executable_directory_when_not_in_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    binary = tmp_path / "ffmpeg.exe"
+    binary.write_text("echo ffmpeg")
+    try:
+        binary.chmod(0o755)
+    except PermissionError:
+        pass
+
+    python_executable = tmp_path / "python.exe"
+    python_executable.write_text("echo python")
+    monkeypatch.setattr(utils.sys, "executable", str(python_executable))
+    monkeypatch.setattr(utils.shutil, "which", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("PATH", "")
+
+    resolved = utils.resolve_executable("ffmpeg.exe", "ffmpeg")
+
+    assert resolved == binary

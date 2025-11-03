@@ -205,6 +205,14 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Не знайдено source.*",
         "en": "source.* not found",
     },
+    "error_missing_ffmpeg": {
+        "uk": "Не знайдено ffmpeg. Додайте ffmpeg до PATH або розмістіть поруч із програмою.",
+        "en": "ffmpeg is not available. Add it to PATH or place it next to the application.",
+    },
+    "error_missing_ffprobe": {
+        "uk": "Не знайдено ffprobe. Додайте ffprobe до PATH або розмістіть поруч із програмою.",
+        "en": "ffprobe is not available. Add it to PATH or place it next to the application.",
+    },
     "error_final_file": {
         "uk": "Не вдалося створити фінальний файл",
         "en": "Failed to create the final file",
