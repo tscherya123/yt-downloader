@@ -1543,7 +1543,7 @@ class DownloaderUI(DownloaderApp):
         self._set_update_dialog_message("update_check_message")
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.configure(mode="indeterminate")
-            self.update_dialog_progress.start(15)
+            self.update_dialog_progress.start()
         self._set_update_dialog_closable(False)
         self._update_check_started_at = None
         self._update_check_finished_at = None
@@ -1868,7 +1868,7 @@ class DownloaderUI(DownloaderApp):
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
             self.update_dialog_progress.configure(mode="indeterminate")
-            self.update_dialog_progress.start(15)
+            self.update_dialog_progress.start()
         self._set_update_dialog_title("update_download_title")
         self._set_update_dialog_message(
             "update_download_preparing", version=info.latest_version
@@ -1900,7 +1900,7 @@ class DownloaderUI(DownloaderApp):
         else:
             if self.update_dialog_progress.cget("mode") != "indeterminate":
                 self.update_dialog_progress.configure(mode="indeterminate")
-                self.update_dialog_progress.start(15)
+                self.update_dialog_progress.start()
             if self.pending_update_info is not None:
                 self._set_update_dialog_message(
                     "update_download_preparing",
