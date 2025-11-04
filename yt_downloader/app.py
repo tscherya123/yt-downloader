@@ -43,6 +43,7 @@ from .updates import (
     download_update_asset,
     install_downloaded_asset,
 )
+from .updater import build_updater_command, maybe_run_updater
 from .utils import (
     format_timestamp as _format_timestamp,
     is_youtube_video_url as _is_youtube_video_url,
@@ -82,6 +83,7 @@ class DownloaderUI(tk.Tk):
         self.pending_update_info: Optional[UpdateInfo] = None
         self.pending_install_result: Optional[InstallResult] = None
         self._update_download_total: Optional[int] = None
+        self._pending_updater_command: Optional[list[str]] = None
 
         self.config_dir = self._prepare_config_directory()
         self.settings_path = self.config_dir / "settings.json"
@@ -1970,6 +1972,7 @@ class DownloaderUI(tk.Tk):
         self.pending_install_result = result
         self.pending_update_info = None
         self._update_download_total = None
+        self._pending_updater_command = None
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
             self.update_dialog_progress.configure(mode="determinate", maximum=100, value=100)
@@ -1978,6 +1981,8 @@ class DownloaderUI(tk.Tk):
         launched = False
         launch_error: Optional[Exception] = None
         if result.executable is not None:
+            if self._prepare_self_update(result):
+                return
             try:
                 self._launch_file(result.executable)
                 launched = True
@@ -2070,6 +2075,92 @@ class DownloaderUI(tk.Tk):
         self._close_update_dialog(show_main=False)
         self.after(50, self.destroy)
 
+    def _can_self_update(self, result: InstallResult) -> bool:
+        return (
+            sys.platform.startswith("win")
+            and getattr(sys, "frozen", False)
+            and result.executable is not None
+        )
+
+    def _build_self_update_command(self, result: InstallResult) -> Optional[list[str]]:
+        if not self._can_self_update(result):
+            return None
+        current_executable = Path(sys.executable).resolve()
+        if not current_executable.exists():
+            return None
+        try:
+            command = build_updater_command(
+                result.executable,
+                current_executable,
+                current_executable,
+                sys.argv[1:],
+                self.update_log_path,
+                wait_before=0.5,
+                max_wait=120.0,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._log_update_event(
+                "Failed to build self-update command", extra={"error": str(exc)}
+            )
+            return None
+        return command
+
+    def _prepare_self_update(self, result: InstallResult) -> bool:
+        if not self._can_self_update(result):
+            return False
+        command = self._build_self_update_command(result)
+        if not command:
+            return False
+        self._pending_updater_command = command
+        self._set_update_dialog_message(
+            "update_install_ready_restart", version=result.version
+        )
+        self._configure_update_dialog_buttons(
+            primary=("update_button_restart", self._run_self_update_now),
+            secondary=("update_button_continue", lambda: self._close_update_dialog(True)),
+        )
+        self._set_update_dialog_closable(True)
+        return True
+
+    def _run_self_update_now(self) -> None:
+        if not self.pending_install_result or not self._pending_updater_command:
+            return
+        result = self.pending_install_result
+        try:
+            subprocess.Popen(self._pending_updater_command, close_fds=False)
+        except Exception as exc:  # pylint: disable=broad-except
+            self._log_update_event(
+                "Failed to launch self-update helper",
+                extra={"error": str(exc)},
+            )
+            self._pending_updater_command = None
+            self._set_update_dialog_message(
+                "update_install_self_update_failed",
+                version=result.version,
+                path=str(result.base_path),
+                error=exc,
+            )
+            self._configure_update_dialog_buttons(
+                primary=(
+                    "update_button_open_folder",
+                    lambda target=result.base_path: self._open_directory(target),
+                ),
+                secondary=("update_button_continue", lambda: self._close_update_dialog(True)),
+            )
+            self._set_update_dialog_closable(True)
+            return
+
+        self._log_update_event(
+            "Self-update helper launched",
+            extra={"command": self._pending_updater_command},
+        )
+        self._set_update_dialog_message(
+            "update_install_restarting", version=result.version
+        )
+        self._configure_update_dialog_buttons()
+        self._set_update_dialog_closable(False)
+        self.after(400, self._exit_after_update)
+
     def _launch_file(self, path: Path) -> None:
         if sys.platform.startswith("win"):
             os.startfile(str(path))  # type: ignore[attr-defined]
@@ -2104,5 +2195,8 @@ class DownloaderUI(tk.Tk):
 
 
 def main() -> None:
+    exit_code = maybe_run_updater()
+    if exit_code is not None:
+        raise SystemExit(exit_code)
     app = DownloaderUI()
     app.mainloop()
