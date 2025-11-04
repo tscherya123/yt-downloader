@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -51,6 +52,45 @@ def test_run_updater_replaces_file(tmp_path) -> None:
     )
     assert exit_code == 0
     assert target.read_text() == "new-version"
+
+
+def test_run_updater_launches_with_expected_parameters(monkeypatch, tmp_path) -> None:
+    source = tmp_path / "new.exe"
+    target = tmp_path / "app.exe"
+    source.write_text("new-version")
+    target.write_text("old-version")
+
+    captured: dict[str, object] = {}
+
+    def fake_popen(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+
+        class _Proc:  # pragma: no cover - behavior doesn't matter
+            pass
+
+        return _Proc()
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    exit_code = run_updater(
+        source=source,
+        target=target,
+        launch_path=target,
+        launch_args=["--foo"],
+        log_file=None,
+        wait_before=0.0,
+        max_wait=1.0,
+    )
+
+    assert exit_code == 0
+    assert target.read_text() == "new-version"
+    assert captured["cmd"] == [str(target), "--foo"]
+    kwargs = captured["kwargs"]
+    assert kwargs["cwd"] == str(tmp_path)
+    assert kwargs["close_fds"] is True
+    if os.name == "nt":
+        assert kwargs.get("creationflags", 0)
 
 
 def test_maybe_run_updater_no_flag_returns_none() -> None:

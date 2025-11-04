@@ -155,8 +155,19 @@ def run_updater(
         if launch_args:
             args.extend(launch_args)
         _LOGGER.info("Launching new executable: %s", args)
+        popen_kwargs: dict[str, object] = {
+            "close_fds": True,
+            "cwd": str(launch_path.parent),
+        }
+
+        if os.name == "nt":
+            creation_flags = 0
+            creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+            creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            if creation_flags:
+                popen_kwargs["creationflags"] = creation_flags
         try:
-            subprocess.Popen(args, close_fds=False)
+            subprocess.Popen(args, **popen_kwargs)
         except Exception as exc:  # pylint: disable=broad-except
             _LOGGER.error("Failed to launch new executable: %s", exc)
             return 1
