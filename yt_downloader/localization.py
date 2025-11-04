@@ -21,10 +21,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Перевіряю наявність оновлень…",
         "en": "Checking for updates…",
     },
-    "update_check_timeout": {
-        "uk": "Перевірка оновлень займає надто багато часу. Перевірте з’єднання та спробуйте ще раз або продовжіть без перевірки.",
-        "en": "Checking for updates is taking too long. Check your connection, then retry or continue without the check.",
-    },
     "update_check_no_updates": {
         "uk": "Ви користуєтеся останньою версією {version}.",
         "en": "You are running the latest version {version}.",
