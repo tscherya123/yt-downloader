@@ -324,15 +324,15 @@ class DownloaderUI(DownloaderApp):
         queue_frame = self.queue_frame
         queue_frame.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
         queue_frame.columnconfigure(0, weight=1)
-        queue_frame.rowconfigure(2, weight=1)
+        queue_frame.rowconfigure(3, weight=1)
 
         self.queue_frame_label = ctk.CTkLabel(
             queue_frame, text=self._("queue_group"), font=self.bold_font, anchor="w"
         )
-        self.queue_frame_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 4))
+        self.queue_frame_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 6))
 
         header_frame = ctk.CTkFrame(queue_frame, fg_color="transparent")
-        header_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
+        header_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 6))
         header_frame.columnconfigure(0, weight=1)
         self.queue_header_frame = header_frame
         self.clear_history_button = ctk.CTkButton(
@@ -345,7 +345,7 @@ class DownloaderUI(DownloaderApp):
 
         self.queue_columns_frame = ctk.CTkFrame(queue_frame, fg_color="transparent")
         columns_frame = self.queue_columns_frame
-        columns_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
+        columns_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 2))
         columns_frame.columnconfigure(0, weight=3)
         columns_frame.columnconfigure(1, weight=2)
         columns_frame.columnconfigure(2, weight=0)
@@ -565,7 +565,7 @@ class DownloaderUI(DownloaderApp):
             title_font=self.bold_font,
             status_font=self.small_font,
         )
-        task_row.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        task_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         self.tasks = {task_id: task_row, **self.tasks}
         self.task_order.insert(0, task_id)
 
@@ -623,7 +623,7 @@ class DownloaderUI(DownloaderApp):
         else:
             self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
-        self.download_button.configure(state="disabled")
+        self._set_button_enabled(self.download_button, False)
         self._set_clip_controls_enabled(False)
         self._update_search_button_state()
 
@@ -634,7 +634,7 @@ class DownloaderUI(DownloaderApp):
             not self.preview_fetch_in_progress
             and _is_youtube_video_url(self.url_var.get().strip())
         )
-        self.search_button.configure(state="normal" if should_enable else "disabled")
+        self._set_button_enabled(self.search_button, should_enable)
 
     def _fetch_preview(self) -> None:
         url = self.url_var.get().strip()
@@ -654,7 +654,7 @@ class DownloaderUI(DownloaderApp):
         self.preview_token += 1
         token = self.preview_token
         self._set_preview_status("loading")
-        self.download_button.configure(state="disabled")
+        self._set_button_enabled(self.download_button, False)
         self._set_preview_title(None)
         self._set_preview_duration(None)
         self._set_clip_controls_enabled(False)
@@ -733,7 +733,7 @@ class DownloaderUI(DownloaderApp):
             self.start_time_var.set("00:00")
             self.end_time_var.set(formatted_duration)
             self._set_clip_controls_enabled(True)
-            self.download_button.configure(state="normal")
+            self._set_button_enabled(self.download_button, True)
             self._set_preview_status("ready")
         else:
             self.duration_seconds = None
@@ -741,7 +741,7 @@ class DownloaderUI(DownloaderApp):
             self.start_time_var.set("00:00")
             self.end_time_var.set("")
             self._set_clip_controls_enabled(False)
-            self.download_button.configure(state="disabled")
+            self._set_button_enabled(self.download_button, False)
             self._set_preview_status("no_duration")
 
         if PIL_AVAILABLE and image is not None:
@@ -769,7 +769,7 @@ class DownloaderUI(DownloaderApp):
         self._set_preview_image_text("preview_thumbnail_failed")
         self.thumbnail_image = None
         self._set_preview_status("error")
-        self.download_button.configure(state="disabled")
+        self._set_button_enabled(self.download_button, False)
         self._set_clip_controls_enabled(False)
         self._update_search_button_state()
         messagebox.showwarning(
@@ -788,7 +788,7 @@ class DownloaderUI(DownloaderApp):
             self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
         self._set_preview_status("idle")
-        self.download_button.configure(state="disabled")
+        self._set_button_enabled(self.download_button, False)
         self._set_clip_controls_enabled(False)
         self._update_search_button_state()
 
@@ -891,9 +891,9 @@ class DownloaderUI(DownloaderApp):
         if not hasattr(self, "clear_history_button"):
             return
         if self.tasks:
-            self.clear_history_button.configure(state="normal")
+            self._set_button_enabled(self.clear_history_button, True)
         else:
-            self.clear_history_button.configure(state="disabled")
+            self._set_button_enabled(self.clear_history_button, False)
 
     def _cancel_task(self, task_id: str) -> None:
         worker = self.workers.get(task_id)
@@ -995,7 +995,7 @@ class DownloaderUI(DownloaderApp):
                 title_font=self.bold_font,
                 status_font=self.small_font,
             )
-            task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
+            task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 6))
             self.tasks[task_id] = task_row
             self.task_order.append(task_id)
         self._reflow_task_rows()
@@ -1195,6 +1195,61 @@ class DownloaderUI(DownloaderApp):
             row.retranslate(self._)
         self._refresh_update_dialog_language()
 
+    def _apply_button_style(
+        self,
+        button: Optional[ctk.CTkButton],
+        *,
+        accent: str,
+        hover: str,
+        text_color: str,
+        disabled_bg: str,
+        disabled_text: str,
+    ) -> None:
+        if button is None:
+            return
+        button.configure(
+            fg_color=accent,
+            hover_color=hover,
+            text_color=text_color,
+            text_color_disabled=disabled_text,
+        )
+        setattr(button, "_normal_fg_color", accent)
+        setattr(button, "_hover_fg_color", hover)
+        setattr(button, "_disabled_fg_color", disabled_bg)
+        setattr(button, "_normal_text_color", text_color)
+        setattr(button, "_disabled_text_color", disabled_text)
+        state = str(button.cget("state"))
+        if state == "disabled":
+            button.configure(fg_color=disabled_bg, hover_color=disabled_bg)
+        else:
+            button.configure(fg_color=accent, hover_color=hover)
+
+    def _set_button_enabled(self, button: Optional[ctk.CTkButton], enabled: bool) -> None:
+        if button is None:
+            return
+        normal_fg = getattr(button, "_normal_fg_color", None)
+        hover_fg = getattr(button, "_hover_fg_color", normal_fg)
+        disabled_fg = getattr(button, "_disabled_fg_color", normal_fg)
+        disabled_text = getattr(button, "_disabled_text_color", None)
+        normal_text = getattr(button, "_normal_text_color", None)
+        if enabled:
+            kwargs: dict[str, object] = {"state": "normal"}
+            if normal_fg:
+                kwargs["fg_color"] = normal_fg
+            if hover_fg:
+                kwargs["hover_color"] = hover_fg
+            if normal_text:
+                kwargs["text_color"] = normal_text
+            button.configure(**kwargs)
+        else:
+            kwargs = {"state": "disabled"}
+            if disabled_fg:
+                kwargs["fg_color"] = disabled_fg
+                kwargs["hover_color"] = disabled_fg
+            if disabled_text:
+                kwargs["text_color_disabled"] = disabled_text
+            button.configure(**kwargs)
+
     def _apply_theme(self) -> None:
         if not self._main_interface_initialized:
             return
@@ -1260,15 +1315,16 @@ class DownloaderUI(DownloaderApp):
             self.clear_history_button,
         )
         button_text = surface if accent else text
-        disabled_text = disabled or button_text
+        disabled_text = colors.get("button_disabled_text", disabled or button_text)
+        disabled_bg = colors.get("button_disabled", disabled or accent)
         for button in button_targets:
-            if button is None:
-                continue
-            button.configure(
-                fg_color=accent,
-                hover_color=hover,
+            self._apply_button_style(
+                button,
+                accent=accent,
+                hover=hover,
                 text_color=button_text,
-                text_color_disabled=disabled_text,
+                disabled_bg=disabled_bg,
+                disabled_text=disabled_text,
             )
 
         self.separate_check.configure(
@@ -1332,11 +1388,13 @@ class DownloaderUI(DownloaderApp):
                 self.update_button_frame.configure(fg_color=surface)
             for button in (self.update_primary_button, self.update_secondary_button):
                 if button is not None:
-                    button.configure(
-                        fg_color=accent,
-                        hover_color=hover,
+                    self._apply_button_style(
+                        button,
+                        accent=accent,
+                        hover=hover,
                         text_color=button_text,
-                        text_color_disabled=disabled_text,
+                        disabled_bg=disabled_bg,
+                        disabled_text=disabled_text,
                     )
             if self.update_dialog_progress is not None:
                 self.update_dialog_progress.configure(

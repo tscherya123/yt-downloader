@@ -52,6 +52,11 @@ class TaskRow(ctk.CTkFrame):
         self.final_path: Optional[Path] = final_path
 
         self.palette = palette or {}
+        self._button_normal_color: Optional[str] = None
+        self._button_hover_color: Optional[str] = None
+        self._button_disabled_color: Optional[str] = None
+        self._button_text_color: Optional[str] = None
+        self._button_disabled_text: Optional[str] = None
 
         self.title_label = ctk.CTkLabel(
             self,
@@ -109,7 +114,7 @@ class TaskRow(ctk.CTkFrame):
         self.columnconfigure(2, weight=0)
         self.title_label.grid(row=0, column=0, sticky="w")
         self.status_label.grid(row=0, column=1, sticky="w", padx=(12, 0))
-        self.actions_frame.grid(row=0, column=2, sticky="e")
+        self.actions_frame.grid(row=0, column=2, sticky="e", padx=(12, 0))
         self.actions_frame.columnconfigure(0, weight=0)
 
         self.cancel_button.grid(row=0, column=0, padx=(0, 6))
@@ -164,7 +169,7 @@ class TaskRow(ctk.CTkFrame):
         self._update_actions()
 
     def mark_cancelling(self) -> None:
-        self.cancel_button.configure(state="disabled")
+        self._set_button_state(self.cancel_button, False)
 
     def _cancel_task(self) -> None:
         if self._cancel_callback is None:
@@ -201,29 +206,26 @@ class TaskRow(ctk.CTkFrame):
             and self._cancel_callback is not None
         )
         if show_cancel:
-            self.cancel_button.configure(state="normal")
             self.cancel_button.grid()
+            self._set_button_state(self.cancel_button, True)
         else:
-            self.cancel_button.configure(state="disabled")
+            self._set_button_state(self.cancel_button, False)
             self.cancel_button.grid_remove()
 
         show_open = self.status_code == "done"
         if show_open:
-            if self.final_path is not None:
-                self.open_button.configure(state="normal")
-            else:
-                self.open_button.configure(state="disabled")
             self.open_button.grid()
+            self._set_button_state(self.open_button, self.final_path is not None)
         else:
-            self.open_button.configure(state="disabled")
+            self._set_button_state(self.open_button, False)
             self.open_button.grid_remove()
 
         show_open_link = bool(self.source_url and self._open_url_callback)
         if show_open_link:
-            self.open_link_button.configure(state="normal")
             self.open_link_button.grid()
+            self._set_button_state(self.open_link_button, True)
         else:
-            self.open_link_button.configure(state="disabled")
+            self._set_button_state(self.open_link_button, False)
             self.open_link_button.grid_remove()
 
         show_retry = (
@@ -232,10 +234,10 @@ class TaskRow(ctk.CTkFrame):
             and self.status_code in {"error", "cancelled", "waiting"}
         )
         if show_retry:
-            self.retry_button.configure(state="normal")
             self.retry_button.grid()
+            self._set_button_state(self.retry_button, True)
         else:
-            self.retry_button.configure(state="disabled")
+            self._set_button_state(self.retry_button, False)
             self.retry_button.grid_remove()
 
         show_remove = (
@@ -243,10 +245,10 @@ class TaskRow(ctk.CTkFrame):
             and self.status_code not in {"downloading", "converting"}
         )
         if show_remove:
-            self.remove_button.configure(state="normal")
             self.remove_button.grid()
+            self._set_button_state(self.remove_button, True)
         else:
-            self.remove_button.configure(state="disabled")
+            self._set_button_state(self.remove_button, False)
             self.remove_button.grid_remove()
 
     def apply_palette(self, palette: dict[str, str]) -> None:
@@ -261,6 +263,9 @@ class TaskRow(ctk.CTkFrame):
         accent = palette.get("accent")
         hover = palette.get("accent_hover", accent)
         disabled = palette.get("disabled")
+        disabled_bg = palette.get("button_disabled", disabled or accent)
+        disabled_text = palette.get("button_disabled_text", disabled or muted)
+        button_text = surface if accent else text
 
         if surface:
             self.configure(fg_color=surface)
@@ -270,6 +275,20 @@ class TaskRow(ctk.CTkFrame):
         if muted:
             self.status_label.configure(text_color=muted)
 
+        base_accent = accent or self._button_normal_color or "#2563eb"
+        base_hover = hover or base_accent
+        base_disabled_bg = disabled_bg or self._button_disabled_color or "#a0a4a8"
+        base_text = button_text or self._button_text_color or text or "#000000"
+        base_disabled_text = (
+            disabled_text or self._button_disabled_text or muted or "#6f6f6f"
+        )
+
+        self._button_normal_color = base_accent
+        self._button_hover_color = base_hover
+        self._button_disabled_color = base_disabled_bg
+        self._button_text_color = base_text
+        self._button_disabled_text = base_disabled_text
+
         buttons = (
             self.cancel_button,
             self.open_button,
@@ -277,14 +296,38 @@ class TaskRow(ctk.CTkFrame):
             self.retry_button,
             self.remove_button,
         )
-        text_color = text or "#000000"
-        button_text = surface if accent else text_color
-        disabled_text = disabled or text_color
         for button in buttons:
+            configure_kwargs: dict[str, object] = {"border_width": 0}
+            disabled_text_color = (
+                self._button_disabled_text or button.cget("text_color_disabled")
+            )
+            if disabled_text_color:
+                configure_kwargs["text_color_disabled"] = disabled_text_color
+            button.configure(**configure_kwargs)
+            self._set_button_state(
+                button,
+                str(button.cget("state")) != "disabled",
+            )
+
+    def _set_button_state(self, button: ctk.CTkButton, enabled: bool) -> None:
+        normal = self._button_normal_color or button.cget("fg_color")
+        hover = self._button_hover_color or normal
+        disabled_bg = self._button_disabled_color or normal
+        disabled_text = self._button_disabled_text or button.cget("text_color_disabled")
+        text_color = self._button_text_color or button.cget("text_color")
+        if disabled_text:
+            button.configure(text_color_disabled=disabled_text)
+        if enabled:
             button.configure(
-                fg_color=accent,
+                state="normal",
+                fg_color=normal,
                 hover_color=hover,
-                text_color=button_text,
+                text_color=text_color,
+            )
+        else:
+            button.configure(
+                state="disabled",
+                fg_color=disabled_bg,
+                hover_color=disabled_bg,
                 text_color_disabled=disabled_text,
-                border_width=0,
             )

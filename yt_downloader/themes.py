@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from importlib import import_module
+from typing import Dict, TYPE_CHECKING
 
-import customtkinter as ctk
+if TYPE_CHECKING:  # pragma: no cover - import only needed for typing tools
+    import customtkinter as ctk
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ _PALETTES: Dict[str, Dict[str, str]] = {
         "accent": "#2563eb",
         "accent_hover": "#1d4ed8",
         "disabled": "#a0a4a8",
+        "button_disabled": "#d1d5db",
+        "button_disabled_text": "#6b7280",
         "entry": "#ffffff",
         "canvas": "#ffffff",
         "log_bg": "#ffffff",
@@ -39,9 +43,11 @@ _PALETTES: Dict[str, Dict[str, str]] = {
         "surface": "#1f1f1f",
         "text": "#f5f5f5",
         "muted": "#b0b0b0",
-        "accent": "#3b82f6",
-        "accent_hover": "#2563eb",
+        "accent": "#2563eb",
+        "accent_hover": "#1d4ed8",
         "disabled": "#6f6f6f",
+        "button_disabled": "#2f2f33",
+        "button_disabled_text": "#9ca3af",
         "entry": "#2a2a2a",
         "canvas": "#1f1f1f",
         "log_bg": "#161616",
@@ -72,6 +78,7 @@ def apply_theme(code: str | None) -> ThemeDefinition:
     """Set CustomTkinter appearance mode and return palette for the theme."""
 
     theme = resolve_theme(code)
+    ctk = import_module("customtkinter")
     ctk.set_appearance_mode(theme.appearance_mode)
     return theme
 
