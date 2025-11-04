@@ -1799,7 +1799,8 @@ class DownloaderUI(DownloaderApp):
         )
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
-            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+            self.update_dialog_progress.configure(mode="determinate")
+            self.update_dialog_progress.set(0.0)
         if info is None:
             self._set_update_dialog_title("update_check_title")
             self._set_update_dialog_message(
@@ -1844,7 +1845,8 @@ class DownloaderUI(DownloaderApp):
         )
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
-            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+            self.update_dialog_progress.configure(mode="determinate")
+            self.update_dialog_progress.set(0.0)
         self._set_update_dialog_title("update_error_title")
         self._set_update_dialog_message("update_check_failed", error=error_message)
         self._configure_update_dialog_buttons()
@@ -1888,11 +1890,12 @@ class DownloaderUI(DownloaderApp):
         if total and total > 0:
             if self.update_dialog_progress.cget("mode") != "determinate":
                 self.update_dialog_progress.stop()
-                self.update_dialog_progress.configure(mode="determinate", maximum=total)
+                self.update_dialog_progress.configure(mode="determinate")
             self._update_download_total = total
             value = min(downloaded, total)
-            self.update_dialog_progress.configure(value=value)
-            percent = min(int(round(value * 100 / total)), 100)
+            progress_ratio = value / total if total else 0.0
+            self.update_dialog_progress.set(progress_ratio)
+            percent = min(int(round(progress_ratio * 100)), 100)
             self._set_update_dialog_message("update_download_progress", percent=percent)
         else:
             if self.update_dialog_progress.cget("mode") != "indeterminate":
@@ -1956,7 +1959,8 @@ class DownloaderUI(DownloaderApp):
         self._pending_updater_command = None
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
-            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=100)
+            self.update_dialog_progress.configure(mode="determinate")
+            self.update_dialog_progress.set(1.0)
         self._set_update_dialog_title("update_install_title")
 
         launched = False
@@ -2014,7 +2018,8 @@ class DownloaderUI(DownloaderApp):
         self._update_download_total = None
         if self.update_dialog_progress is not None:
             self.update_dialog_progress.stop()
-            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+            self.update_dialog_progress.configure(mode="determinate")
+            self.update_dialog_progress.set(0.0)
         self._set_update_dialog_title("update_error_title")
         self._set_update_dialog_message("update_install_failed", error=error_message)
         self._configure_update_dialog_buttons(
