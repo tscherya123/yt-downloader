@@ -18,8 +18,9 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
-from tkinter import ttk
+from tkinter import filedialog, messagebox
+
+import customtkinter as ctk
 
 try:  # Необов'язкова залежність – для обкладинок у форматі JPEG потрібен Pillow.
     from PIL import Image, ImageTk  # type: ignore
@@ -34,7 +35,7 @@ from .localization import (
     SUPPORTED_LANGUAGES,
     translate,
 )
-from .themes import DEFAULT_THEME, THEMES
+from .themes import DEFAULT_THEME, THEMES, apply_theme, resolve_theme
 from .updates import (
     InstallResult,
     UpdateError,
@@ -54,20 +55,27 @@ from .worker import DownloadWorker
 from .version import __version__
 
 
-class DownloaderUI(tk.Tk):
+class DownloaderApp(ctk.CTk):
+    """Base window configured for CustomTkinter."""
+
     def __init__(self) -> None:
         super().__init__()
         self.withdraw()
 
+
+class DownloaderUI(DownloaderApp):
+    def __init__(self) -> None:
+        super().__init__()
+
         self.app_version = __version__
         self.update_log_path = self._determine_update_log_path()
         self._update_log_lock = threading.Lock()
-        self.update_dialog: Optional[tk.Widget] = None
-        self.update_dialog_message_var = tk.StringVar()
-        self.update_dialog_progress: Optional[ttk.Progressbar] = None
-        self.update_button_frame: Optional[ttk.Frame] = None
-        self.update_primary_button: Optional[ttk.Button] = None
-        self.update_secondary_button: Optional[ttk.Button] = None
+        self.update_dialog: Optional[ctk.CTkToplevel] = None
+        self.update_dialog_message_var = ctk.StringVar()
+        self.update_dialog_progress: Optional[ctk.CTkProgressBar] = None
+        self.update_button_frame: Optional[ctk.CTkFrame] = None
+        self.update_primary_button: Optional[ctk.CTkButton] = None
+        self.update_secondary_button: Optional[ctk.CTkButton] = None
         self._update_message_key: Optional[str] = None
         self._update_message_kwargs: dict[str, object] = {}
         self._update_dialog_title_key: Optional[str] = None
@@ -92,6 +100,7 @@ class DownloaderUI(tk.Tk):
         self.settings: dict[str, object] = self._load_settings()
         self.language = self._coerce_language(self.settings.get("language"))
         self.theme = self._coerce_theme(self.settings.get("theme"))
+        self.current_palette: dict[str, str] = {}
 
         self.update_cache_dir = self.config_dir / "updates"
 
@@ -99,27 +108,9 @@ class DownloaderUI(tk.Tk):
         self.geometry("1200x760")
         self.minsize(1040, 700)
 
-        self.style = ttk.Style(self)
-        available_themes = set(self.style.theme_names())
-        current_theme = self.style.theme_use()
-        preferred_light = "vista" if sys.platform.startswith("win") else "clam"
-        if preferred_light in available_themes:
-            self.light_base_theme = preferred_light
-        elif current_theme in available_themes:
-            self.light_base_theme = current_theme
-        else:
-            self.light_base_theme = "default"
-        self.dark_base_theme = "clam" if "clam" in available_themes else self.light_base_theme
-        try:
-            self.style.theme_use(self.light_base_theme)
-            self.current_base_theme = self.light_base_theme
-        except tk.TclError:
-            # Якщо потрібний базовий стиль недоступний, запам'ятовуємо доступний варіант.
-            self.current_base_theme = current_theme
-            self.light_base_theme = current_theme
-            self.dark_base_theme = current_theme
-        self.style.configure("TaskTitle.TLabel", font=("Segoe UI", 10, "bold"))
-        self.option_add("*Font", ("Segoe UI", 10))
+        self.base_font = ctk.CTkFont(family="Segoe UI", size=11)
+        self.small_font = ctk.CTkFont(family="Segoe UI", size=10)
+        self.bold_font = ctk.CTkFont(family="Segoe UI", size=11, weight="bold")
 
         default_root = str((Path.home() / "Downloads").resolve())
         saved_root = self.settings.get("root_folder")
@@ -150,9 +141,9 @@ class DownloaderUI(tk.Tk):
 
         self._main_interface_initialized = False
 
-        self.update_view: Optional[ttk.Frame] = None
-        self.update_title_var = tk.StringVar()
-        self.update_title_label: Optional[ttk.Label] = None
+        self.update_view: Optional[ctk.CTkFrame] = None
+        self.update_title_var = ctk.StringVar()
+        self.update_title_label: Optional[ctk.CTkLabel] = None
 
         self.protocol("WM_DELETE_WINDOW", self._on_root_close_attempt)
 
@@ -164,8 +155,9 @@ class DownloaderUI(tk.Tk):
         if self._main_interface_initialized:
             return
 
-        container = ttk.Frame(self, padding=12)
-        container.grid(row=0, column=0, sticky="nsew")
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        self.root_container = container
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=3)
@@ -173,68 +165,77 @@ class DownloaderUI(tk.Tk):
         container.grid_rowconfigure(0, weight=0)
         container.grid_rowconfigure(1, weight=1)
 
-        options_frame = ttk.Frame(container)
+        options_frame = ctk.CTkFrame(container, fg_color="transparent")
         options_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
         options_frame.grid_columnconfigure(1, weight=1)
         options_frame.grid_columnconfigure(3, weight=1)
+        self.options_frame = options_frame
 
-        self.language_label = ttk.Label(options_frame, anchor="e")
+        self.language_label = ctk.CTkLabel(options_frame, anchor="e", font=self.base_font)
         self.language_label.grid(row=0, column=0, sticky="e", padx=(0, 6))
-        self.language_display_var = tk.StringVar()
-        self.language_combo = ttk.Combobox(
+        self.language_display_var = ctk.StringVar()
+        self.language_combo = ctk.CTkComboBox(
             options_frame,
             state="readonly",
-            textvariable=self.language_display_var,
-            width=18,
+            values=[],
+            variable=self.language_display_var,
+            command=self._on_language_selected,
+            width=180,
         )
         self.language_combo.grid(row=0, column=1, sticky="w")
-        self.language_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
 
-        self.theme_label = ttk.Label(options_frame, anchor="e")
+        self.theme_label = ctk.CTkLabel(options_frame, anchor="e", font=self.base_font)
         self.theme_label.grid(row=0, column=2, sticky="e", padx=(18, 6))
-        self.theme_display_var = tk.StringVar()
-        self.theme_combo = ttk.Combobox(
+        self.theme_display_var = ctk.StringVar()
+        self.theme_combo = ctk.CTkComboBox(
             options_frame,
             state="readonly",
-            textvariable=self.theme_display_var,
-            width=18,
+            values=[],
+            variable=self.theme_display_var,
+            command=self._on_theme_selected,
+            width=180,
         )
         self.theme_combo.grid(row=0, column=3, sticky="w")
-        self.theme_combo.bind("<<ComboboxSelected>>", self._on_theme_selected)
 
-        left_frame = ttk.Frame(container)
+        left_frame = ctk.CTkFrame(container)
         left_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
         left_frame.grid_columnconfigure(1, weight=1)
         left_frame.grid_rowconfigure(4, weight=1)
+        self.left_frame = left_frame
 
-        self.url_label = ttk.Label(left_frame, text=self._("url_label"))
+        self.url_label = ctk.CTkLabel(left_frame, text=self._("url_label"), font=self.base_font)
         self.url_label.grid(row=0, column=0, sticky="w")
-        self.url_var = tk.StringVar()
-        self.url_entry = ttk.Entry(left_frame, textvariable=self.url_var)
+        self.url_var = ctk.StringVar()
+        self.url_entry = ctk.CTkEntry(left_frame, textvariable=self.url_var, font=self.base_font)
         self.url_entry.grid(row=0, column=1, sticky="ew", padx=(8, 0))
         self.url_var.trace_add("write", self._on_url_change)
-        self.search_button = ttk.Button(
+        self.search_button = ctk.CTkButton(
             left_frame, text=self._("search_button"), command=self._fetch_preview
         )
         self.search_button.grid(row=0, column=2, sticky="e")
         self._update_search_button_state()
 
-        self.root_label = ttk.Label(left_frame, text=self._("root_label"))
+        self.root_label = ctk.CTkLabel(left_frame, text=self._("root_label"), font=self.base_font)
         self.root_label.grid(row=1, column=0, sticky="w", pady=(12, 0))
-        self.root_var = tk.StringVar(value=self.initial_root)
-        self.root_entry = ttk.Entry(left_frame, textvariable=self.root_var)
+        self.root_var = ctk.StringVar(value=self.initial_root)
+        self.root_entry = ctk.CTkEntry(left_frame, textvariable=self.root_var, font=self.base_font)
         self.root_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(12, 0))
-        self.browse_button = ttk.Button(
+        self.browse_button = ctk.CTkButton(
             left_frame, text=self._("choose_button"), command=self._browse_root
         )
         self.browse_button.grid(row=1, column=2, sticky="e", pady=(12, 0))
 
-        self.separate_var = tk.BooleanVar(value=False)
-        self.separate_check = ttk.Checkbutton(
-            left_frame, text=self._("separate_folder"), variable=self.separate_var
+        self.separate_var = ctk.BooleanVar(value=False)
+        self.separate_check = ctk.CTkCheckBox(
+            left_frame,
+            text=self._("separate_folder"),
+            variable=self.separate_var,
+            onvalue=True,
+            offvalue=False,
+            font=self.base_font,
         )
         self.separate_check.grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 0))
-        self.download_button = ttk.Button(
+        self.download_button = ctk.CTkButton(
             left_frame,
             text=self._("download_button"),
             command=self._start_worker,
@@ -242,69 +243,99 @@ class DownloaderUI(tk.Tk):
         )
         self.download_button.grid(row=2, column=2, sticky="e", pady=(12, 0))
 
-        self.preview_frame = ttk.LabelFrame(left_frame, text=self._("preview_group"))
+        self.preview_frame = ctk.CTkFrame(left_frame, corner_radius=8)
         preview_frame = self.preview_frame
         preview_frame.grid(row=3, column=0, columnspan=3, sticky="nsew", pady=(18, 12))
         preview_frame.columnconfigure(0, weight=1)
 
-        self.preview_title_var = tk.StringVar()
-        self.preview_title_label = ttk.Label(
+        self.preview_frame_label = ctk.CTkLabel(
+            preview_frame,
+            text=self._("preview_group"),
+            font=self.bold_font,
+            anchor="w",
+        )
+        self.preview_frame_label.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
+
+        self.preview_title_var = ctk.StringVar()
+        self.preview_title_label = ctk.CTkLabel(
             preview_frame,
             textvariable=self.preview_title_var,
             justify="left",
+            anchor="w",
             wraplength=560,
+            font=self.base_font,
         )
-        self.preview_title_label.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
+        self.preview_title_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
 
-        self.preview_duration_var = tk.StringVar()
-        self.preview_duration_label = ttk.Label(
+        self.preview_duration_var = ctk.StringVar()
+        self.preview_duration_label = ctk.CTkLabel(
             preview_frame,
             textvariable=self.preview_duration_var,
             justify="left",
+            anchor="w",
+            font=self.base_font,
         )
-        self.preview_duration_label.grid(row=1, column=0, sticky="w", padx=12)
+        self.preview_duration_label.grid(row=2, column=0, sticky="w", padx=12)
 
-        if PIL_AVAILABLE:
-            self.preview_image_label = tk.Label(preview_frame)
-        else:
-            self.preview_image_label = tk.Label(preview_frame)
-        self.preview_image_label.grid(row=2, column=0, padx=12, pady=6, sticky="nsew")
+        self.preview_image_label = ctk.CTkLabel(preview_frame, text="")
+        self.preview_image_label.grid(row=3, column=0, padx=12, pady=6, sticky="nsew")
         self.preview_image_text_key = None
         if not PIL_AVAILABLE:
             self.preview_image_text_key = "preview_thumbnail_pillow_required"
             self.preview_image_label.configure(text=self._("preview_thumbnail_pillow_required"))
 
-        clip_frame = ttk.Frame(preview_frame)
-        clip_frame.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 6))
-        self.clip_start_label = ttk.Label(clip_frame, text=self._("clip_start_label"))
+        clip_frame = ctk.CTkFrame(preview_frame, fg_color="transparent")
+        clip_frame.grid(row=4, column=0, sticky="w", padx=12, pady=(0, 6))
+        self.clip_frame = clip_frame
+        self.clip_start_label = ctk.CTkLabel(
+            clip_frame, text=self._("clip_start_label"), font=self.base_font
+        )
         self.clip_start_label.grid(row=0, column=0, sticky="w")
-        self.start_time_var = tk.StringVar(value="00:00")
-        self.start_entry = ttk.Entry(
-            clip_frame, textvariable=self.start_time_var, width=10, state="disabled"
+        self.start_time_var = ctk.StringVar(value="00:00")
+        self.start_entry = ctk.CTkEntry(
+            clip_frame,
+            textvariable=self.start_time_var,
+            width=90,
+            state="disabled",
+            font=self.base_font,
         )
         self.start_entry.grid(row=0, column=1, sticky="w", padx=(6, 18))
-        self.clip_end_label = ttk.Label(clip_frame, text=self._("clip_end_label"))
+        self.clip_end_label = ctk.CTkLabel(
+            clip_frame, text=self._("clip_end_label"), font=self.base_font
+        )
         self.clip_end_label.grid(row=0, column=2, sticky="w")
-        self.end_time_var = tk.StringVar(value="00:00")
-        self.end_entry = ttk.Entry(
-            clip_frame, textvariable=self.end_time_var, width=10, state="disabled"
+        self.end_time_var = ctk.StringVar(value="00:00")
+        self.end_entry = ctk.CTkEntry(
+            clip_frame,
+            textvariable=self.end_time_var,
+            width=90,
+            state="disabled",
+            font=self.base_font,
         )
         self.end_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
 
-        self.preview_status_var = tk.StringVar(value="")
-        self.preview_status_label = ttk.Label(preview_frame, textvariable=self.preview_status_var)
-        self.preview_status_label.grid(row=4, column=0, sticky="w", padx=12, pady=(0, 12))
+        self.preview_status_var = ctk.StringVar(value="")
+        self.preview_status_label = ctk.CTkLabel(
+            preview_frame, textvariable=self.preview_status_var, anchor="w", font=self.base_font
+        )
+        self.preview_status_label.grid(row=5, column=0, sticky="w", padx=12, pady=(0, 12))
 
-        self.queue_frame = ttk.LabelFrame(container, text=self._("queue_group"))
+        self.queue_frame = ctk.CTkFrame(container, corner_radius=8)
         queue_frame = self.queue_frame
         queue_frame.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
         queue_frame.columnconfigure(0, weight=1)
         queue_frame.rowconfigure(2, weight=1)
 
-        header_frame = ttk.Frame(queue_frame)
-        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 4))
+        self.queue_frame_label = ctk.CTkLabel(
+            queue_frame, text=self._("queue_group"), font=self.bold_font, anchor="w"
+        )
+        self.queue_frame_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 4))
+
+        header_frame = ctk.CTkFrame(queue_frame, fg_color="transparent")
+        header_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
         header_frame.columnconfigure(0, weight=1)
-        self.clear_history_button = ttk.Button(
+        self.queue_header_frame = header_frame
+        self.clear_history_button = ctk.CTkButton(
             header_frame,
             text=self._("clear_history"),
             command=self._confirm_clear_history,
@@ -312,42 +343,41 @@ class DownloaderUI(tk.Tk):
         )
         self.clear_history_button.grid(row=0, column=1, sticky="e")
 
-        self.queue_columns_frame = ttk.Frame(queue_frame, style="TaskHeader.TFrame")
+        self.queue_columns_frame = ctk.CTkFrame(queue_frame, fg_color="transparent")
         columns_frame = self.queue_columns_frame
-        columns_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
+        columns_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
         columns_frame.columnconfigure(0, weight=3)
         columns_frame.columnconfigure(1, weight=2)
         columns_frame.columnconfigure(2, weight=0)
-        self.queue_title_header = ttk.Label(
+        self.queue_title_header = ctk.CTkLabel(
             columns_frame,
             text=self._("queue_column_title"),
-            style="TaskHeader.TLabel",
             anchor="w",
+            font=self.small_font,
         )
-        self.queue_status_header = ttk.Label(
+        self.queue_status_header = ctk.CTkLabel(
             columns_frame,
             text=self._("queue_column_status"),
-            style="TaskHeader.TLabel",
             anchor="w",
+            font=self.small_font,
         )
-        self.queue_actions_header = ttk.Label(
+        self.queue_actions_header = ctk.CTkLabel(
             columns_frame,
             text=self._("queue_column_actions"),
-            style="TaskHeader.TLabel",
             anchor="e",
+            font=self.small_font,
         )
         self.queue_title_header.grid(row=0, column=0, sticky="w")
         self.queue_status_header.grid(row=0, column=1, sticky="w")
         self.queue_actions_header.grid(row=0, column=2, sticky="e")
 
         self.tasks_canvas = tk.Canvas(queue_frame, highlightthickness=0)
-        self.tasks_canvas.grid(row=2, column=0, sticky="nsew")
-        self.tasks_scroll = ttk.Scrollbar(
-            queue_frame, orient="vertical", command=self.tasks_canvas.yview
-        )
-        self.tasks_scroll.grid(row=2, column=1, sticky="ns")
+        self.tasks_canvas.grid(row=3, column=0, sticky="nsew")
+        self.tasks_scroll = ctk.CTkScrollbar(queue_frame, orientation="vertical")
+        self.tasks_scroll.grid(row=3, column=1, sticky="ns")
         self.tasks_canvas.configure(yscrollcommand=self.tasks_scroll.set)
-        self.tasks_inner = ttk.Frame(self.tasks_canvas, style="TaskContainer.TFrame")
+        self.tasks_scroll.configure(command=self.tasks_canvas.yview)
+        self.tasks_inner = ctk.CTkFrame(self.tasks_canvas, fg_color="transparent")
         self.tasks_inner.columnconfigure(0, weight=1)
         self.tasks_window = self.tasks_canvas.create_window(
             (0, 0), window=self.tasks_inner, anchor="nw"
@@ -367,16 +397,24 @@ class DownloaderUI(tk.Tk):
 
         self._restore_queue_from_history()
 
-        self.log_frame = ttk.LabelFrame(left_frame, text=self._("log_group"))
+        self.log_frame = ctk.CTkFrame(left_frame, corner_radius=8)
         log_frame = self.log_frame
         log_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=(6, 0))
+        log_frame.grid_columnconfigure(0, weight=1)
+        log_frame.grid_rowconfigure(1, weight=1)
 
-        self.log_widget = scrolledtext.ScrolledText(
+        self.log_frame_label = ctk.CTkLabel(
+            log_frame, text=self._("log_group"), font=self.bold_font, anchor="w"
+        )
+        self.log_frame_label.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
+
+        self.log_widget = ctk.CTkTextbox(
             log_frame,
             state="disabled",
             font=("Consolas", 10),
+            wrap="word",
         )
-        self.log_widget.pack(fill="both", expand=True, padx=6, pady=8)
+        self.log_widget.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
 
         self._register_clipboard_shortcuts()
 
@@ -523,6 +561,9 @@ class DownloaderUI(tk.Tk):
             retry_callback=self._retry_task,
             source_url=url,
             status="downloading",
+            palette=self.current_palette,
+            title_font=self.bold_font,
+            status_font=self.small_font,
         )
         task_row.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self.tasks = {task_id: task_row, **self.tasks}
@@ -582,7 +623,7 @@ class DownloaderUI(tk.Tk):
         else:
             self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
-        self.download_button.state(["disabled"])
+        self.download_button.configure(state="disabled")
         self._set_clip_controls_enabled(False)
         self._update_search_button_state()
 
@@ -593,18 +634,7 @@ class DownloaderUI(tk.Tk):
             not self.preview_fetch_in_progress
             and _is_youtube_video_url(self.url_var.get().strip())
         )
-        if should_enable:
-            self.search_button.state(["!disabled"])
-            try:
-                self.search_button.configure(state=tk.NORMAL)
-            except tk.TclError:
-                pass
-        else:
-            self.search_button.state(["disabled"])
-            try:
-                self.search_button.configure(state=tk.DISABLED)
-            except tk.TclError:
-                pass
+        self.search_button.configure(state="normal" if should_enable else "disabled")
 
     def _fetch_preview(self) -> None:
         url = self.url_var.get().strip()
@@ -624,7 +654,7 @@ class DownloaderUI(tk.Tk):
         self.preview_token += 1
         token = self.preview_token
         self._set_preview_status("loading")
-        self.download_button.state(["disabled"])
+        self.download_button.configure(state="disabled")
         self._set_preview_title(None)
         self._set_preview_duration(None)
         self._set_clip_controls_enabled(False)
@@ -703,7 +733,7 @@ class DownloaderUI(tk.Tk):
             self.start_time_var.set("00:00")
             self.end_time_var.set(formatted_duration)
             self._set_clip_controls_enabled(True)
-            self.download_button.state(["!disabled"])
+            self.download_button.configure(state="normal")
             self._set_preview_status("ready")
         else:
             self.duration_seconds = None
@@ -711,7 +741,7 @@ class DownloaderUI(tk.Tk):
             self.start_time_var.set("00:00")
             self.end_time_var.set("")
             self._set_clip_controls_enabled(False)
-            self.download_button.state(["disabled"])
+            self.download_button.configure(state="disabled")
             self._set_preview_status("no_duration")
 
         if PIL_AVAILABLE and image is not None:
@@ -739,7 +769,7 @@ class DownloaderUI(tk.Tk):
         self._set_preview_image_text("preview_thumbnail_failed")
         self.thumbnail_image = None
         self._set_preview_status("error")
-        self.download_button.state(["disabled"])
+        self.download_button.configure(state="disabled")
         self._set_clip_controls_enabled(False)
         self._update_search_button_state()
         messagebox.showwarning(
@@ -758,7 +788,7 @@ class DownloaderUI(tk.Tk):
             self._set_preview_image_text("preview_thumbnail_pillow_required")
         self.thumbnail_image = None
         self._set_preview_status("idle")
-        self.download_button.state(["disabled"])
+        self.download_button.configure(state="disabled")
         self._set_clip_controls_enabled(False)
         self._update_search_button_state()
 
@@ -861,9 +891,9 @@ class DownloaderUI(tk.Tk):
         if not hasattr(self, "clear_history_button"):
             return
         if self.tasks:
-            self.clear_history_button.state(["!disabled"])
+            self.clear_history_button.configure(state="normal")
         else:
-            self.clear_history_button.state(["disabled"])
+            self.clear_history_button.configure(state="disabled")
 
     def _cancel_task(self, task_id: str) -> None:
         worker = self.workers.get(task_id)
@@ -961,6 +991,9 @@ class DownloaderUI(tk.Tk):
                 source_url=source_url,
                 status=status,
                 final_path=final_path,
+                palette=self.current_palette,
+                title_font=self.bold_font,
+                status_font=self.small_font,
             )
             task_row.grid(row=len(self.tasks), column=0, sticky="ew", pady=(0, 8))
             self.tasks[task_id] = task_row
@@ -1079,8 +1112,9 @@ class DownloaderUI(tk.Tk):
         self.start_entry.configure(state=state)
         self.end_entry.configure(state=state)
 
-    def _on_language_selected(self, _: tk.Event) -> None:  # pragma: no cover - UI callback
-        selection = self.language_display_var.get()
+    def _on_language_selected(self, selection: str | None) -> None:  # pragma: no cover - UI callback
+        if not selection:
+            selection = self.language_display_var.get()
         code = getattr(self, "_language_name_map", {}).get(selection)
         if not code:
             current_name = getattr(self, "_language_display_by_code", {}).get(
@@ -1088,6 +1122,7 @@ class DownloaderUI(tk.Tk):
             )
             if current_name:
                 self.language_display_var.set(current_name)
+                self.language_combo.set(current_name)
             return
         if code == self.language:
             return
@@ -1095,13 +1130,15 @@ class DownloaderUI(tk.Tk):
         self._store_language(code)
         self._apply_language()
 
-    def _on_theme_selected(self, _: tk.Event) -> None:  # pragma: no cover - UI callback
-        selection = self.theme_display_var.get()
+    def _on_theme_selected(self, selection: str | None) -> None:  # pragma: no cover - UI callback
+        if not selection:
+            selection = self.theme_display_var.get()
         code = getattr(self, "_theme_name_map", {}).get(selection)
         if not code:
             current_name = getattr(self, "_theme_display_by_code", {}).get(self.theme)
             if current_name:
                 self.theme_display_var.set(current_name)
+                self.theme_combo.set(current_name)
             return
         if code == self.theme:
             return
@@ -1118,6 +1155,7 @@ class DownloaderUI(tk.Tk):
         self.language_combo.configure(values=list(language_names.values()))
         current_language_name = language_names.get(self.language, language_names[DEFAULT_LANGUAGE])
         self.language_display_var.set(current_language_name)
+        self.language_combo.set(current_language_name)
 
         theme_names = {key: self._(f"theme_{key}") for key in THEMES}
         self._theme_display_by_code = theme_names
@@ -1125,6 +1163,7 @@ class DownloaderUI(tk.Tk):
         self.theme_combo.configure(values=list(theme_names.values()))
         current_theme_name = theme_names.get(self.theme, theme_names[DEFAULT_THEME])
         self.theme_display_var.set(current_theme_name)
+        self.theme_combo.set(current_theme_name)
 
         self._set_window_title()
         self.language_label.configure(text=self._("language_label"))
@@ -1135,9 +1174,9 @@ class DownloaderUI(tk.Tk):
         self.browse_button.configure(text=self._("choose_button"))
         self.separate_check.configure(text=self._("separate_folder"))
         self.download_button.configure(text=self._("download_button"))
-        self.preview_frame.configure(text=self._("preview_group"))
-        self.queue_frame.configure(text=self._("queue_group"))
-        self.log_frame.configure(text=self._("log_group"))
+        self.preview_frame_label.configure(text=self._("preview_group"))
+        self.queue_frame_label.configure(text=self._("queue_group"))
+        self.log_frame_label.configure(text=self._("log_group"))
         self.clip_start_label.configure(text=self._("clip_start_label"))
         self.clip_end_label.configure(text=self._("clip_end_label"))
         self.clear_history_button.configure(text=self._("clear_history"))
@@ -1159,8 +1198,151 @@ class DownloaderUI(tk.Tk):
     def _apply_theme(self) -> None:
         if not self._main_interface_initialized:
             return
-        colors = THEMES.get(self.theme, THEMES[DEFAULT_THEME])
-        self.configure(bg=colors["background"])
+        theme_def = apply_theme(self.theme)
+        colors = dict(theme_def.colors)
+        self.current_palette = colors
+
+        background = colors.get("background")
+        surface = colors.get("surface") or background
+        accent = colors.get("accent") or "#2563eb"
+        hover = colors.get("accent_hover") or accent
+        text = colors.get("text") or "#202124"
+        muted = colors.get("muted") or text
+        disabled = colors.get("disabled") or "#888888"
+        entry_color = colors.get("entry", surface)
+        canvas_color = colors.get("canvas", surface)
+        log_bg = colors.get("log_bg", surface)
+        log_fg = colors.get("log_fg", text)
+        highlight = colors.get("highlight", surface)
+
+        if background:
+            self.configure(fg_color=background)
+        for frame_name in (
+            "root_container",
+            "options_frame",
+            "left_frame",
+            "preview_frame",
+            "clip_frame",
+            "queue_frame",
+            "queue_header_frame",
+            "queue_columns_frame",
+            "tasks_inner",
+            "log_frame",
+        ):
+            frame = getattr(self, frame_name, None)
+            if frame is not None and surface is not None:
+                frame.configure(fg_color=surface)
+
+        label_targets = (
+            "language_label",
+            "theme_label",
+            "url_label",
+            "root_label",
+            "preview_frame_label",
+            "preview_title_label",
+            "preview_duration_label",
+            "queue_frame_label",
+            "queue_title_header",
+            "queue_actions_header",
+            "log_frame_label",
+        )
+        for label_name in label_targets:
+            label = getattr(self, label_name, None)
+            if label is not None:
+                label.configure(text_color=text)
+        self.preview_status_label.configure(text_color=muted)
+        self.queue_status_header.configure(text_color=muted)
+
+        button_targets = (
+            self.search_button,
+            self.browse_button,
+            self.download_button,
+            self.clear_history_button,
+        )
+        button_text = surface if accent else text
+        disabled_text = disabled or button_text
+        for button in button_targets:
+            if button is None:
+                continue
+            button.configure(
+                fg_color=accent,
+                hover_color=hover,
+                text_color=button_text,
+                text_color_disabled=disabled_text,
+            )
+
+        self.separate_check.configure(
+            text_color=text,
+            fg_color=accent,
+            border_color=accent,
+            hover_color=hover,
+            checkmark_color=surface or "white",
+        )
+
+        combo_kwargs = {
+            "fg_color": entry_color,
+            "border_color": highlight,
+            "button_color": accent,
+            "button_hover_color": hover,
+            "text_color": text,
+            "dropdown_fg_color": entry_color,
+            "dropdown_hover_color": highlight,
+            "dropdown_text_color": text,
+        }
+        self.language_combo.configure(**combo_kwargs)
+        self.theme_combo.configure(**combo_kwargs)
+
+        entry_kwargs = {
+            "fg_color": entry_color,
+            "border_color": highlight,
+            "text_color": text,
+            "text_color_disabled": disabled,
+        }
+        self.url_entry.configure(**entry_kwargs)
+        self.root_entry.configure(**entry_kwargs)
+        self.start_entry.configure(**entry_kwargs)
+        self.end_entry.configure(**entry_kwargs)
+
+        if surface is not None:
+            self.preview_image_label.configure(text_color=muted, fg_color=surface)
+            self.queue_columns_frame.configure(fg_color=surface)
+
+        self.tasks_canvas.configure(background=canvas_color or surface, highlightthickness=0)
+        self.tasks_scroll.configure(
+            fg_color=surface,
+            button_color=accent,
+            button_hover_color=hover,
+        )
+
+        self.log_widget.configure(
+            fg_color=log_bg,
+            text_color=log_fg,
+            border_color=highlight,
+            border_width=1,
+        )
+
+        for row in self.tasks.values():
+            row.apply_palette(colors)
+
+        if self.update_view is not None:
+            self.update_view.configure(fg_color=surface)
+            if self.update_title_label is not None:
+                self.update_title_label.configure(text_color=text)
+            if self.update_button_frame is not None:
+                self.update_button_frame.configure(fg_color=surface)
+            for button in (self.update_primary_button, self.update_secondary_button):
+                if button is not None:
+                    button.configure(
+                        fg_color=accent,
+                        hover_color=hover,
+                        text_color=button_text,
+                        text_color_disabled=disabled_text,
+                    )
+            if self.update_dialog_progress is not None:
+                self.update_dialog_progress.configure(
+                    fg_color=highlight,
+                    progress_color=accent,
+                )
 
     def _set_window_title(self) -> None:
         self.title(self._("app_title_with_version", version=self.app_version))
@@ -1181,209 +1363,6 @@ class DownloaderUI(tk.Tk):
             self.update_primary_button.configure(text=self._(self._update_primary_button_key))
         if self.update_secondary_button and self._update_secondary_button_key is not None:
             self.update_secondary_button.configure(text=self._(self._update_secondary_button_key))
-
-        desired_base_theme = (
-            self.light_base_theme if self.theme == "light" else self.dark_base_theme
-        )
-        if desired_base_theme != self.current_base_theme:
-            try:
-                self.style.theme_use(desired_base_theme)
-                self.current_base_theme = desired_base_theme
-            except tk.TclError:
-                # Якщо теми немає, залишаємось на попередній.
-                pass
-
-        self.style.configure("TFrame", background=colors["frame"])
-        self.style.configure("TLabelframe", background=colors["frame"], foreground=colors["text"])
-        self.style.configure("TLabelframe.Label", background=colors["frame"], foreground=colors["text"])
-        self.style.configure("TLabel", background=colors["frame"], foreground=colors["text"])
-        self.style.configure(
-            "TaskTitle.TLabel",
-            background=colors["frame"],
-            foreground=colors["text"],
-            font=("Segoe UI", 10, "bold"),
-        )
-        self.style.configure(
-            "TaskRow.TFrame",
-            background=colors["frame"],
-            borderwidth=1,
-            relief="solid",
-        )
-        self.style.configure(
-            "TaskActions.TFrame",
-            background=colors["frame"],
-            borderwidth=0,
-            relief="flat",
-        )
-        self.style.configure(
-            "TaskHeader.TFrame",
-            background=colors["frame"],
-        )
-        self.style.configure(
-            "TaskHeader.TLabel",
-            background=colors["frame"],
-            foreground=colors["text"],
-            font=("Segoe UI", 9, "bold"),
-        )
-        self.style.configure(
-            "TaskStatus.TLabel",
-            background=colors["frame"],
-            foreground=colors["muted"],
-        )
-        self.style.configure(
-            "TaskContainer.TFrame",
-            background=colors["canvas_bg"],
-        )
-        self.style.configure(
-            "TButton",
-            background=colors["button_bg"],
-            foreground=colors["button_fg"],
-        )
-        self.style.map(
-            "TButton",
-            background=[("active", colors["button_active_bg"]), ("disabled", colors["button_bg"])],
-            foreground=[("disabled", colors["disabled_fg"])]
-        )
-        self.style.configure(
-            "TCheckbutton",
-            background=colors["frame"],
-            foreground=colors["text"],
-        )
-        self.style.configure(
-            "TCombobox",
-            fieldbackground=colors["entry_bg"],
-            background=colors["frame"],
-            foreground=colors["text"],
-            arrowcolor=colors["text"],
-        )
-        self.style.map(
-            "TCombobox",
-            fieldbackground=[("readonly", colors["entry_bg"])],
-            foreground=[
-                ("readonly", colors["text"]),
-                ("disabled", colors["disabled_fg"]),
-            ],
-        )
-        self.style.configure(
-            "TEntry",
-            fieldbackground=colors["entry_bg"],
-            foreground=colors["text"],
-            insertcolor=colors["text"],
-        )
-        self.style.map(
-            "TEntry",
-            fieldbackground=[
-                ("readonly", colors["entry_bg"]),
-                ("disabled", colors["frame"]),
-            ],
-            foreground=[("disabled", colors["disabled_fg"])],
-        )
-        dropdown_bg = colors["dropdown_bg"]
-        dropdown_fg = colors["dropdown_fg"]
-        dropdown_select_bg = colors["dropdown_select_bg"]
-        dropdown_select_fg = colors["dropdown_select_fg"]
-        listbox_colors = {
-            "background": dropdown_bg,
-            "foreground": dropdown_fg,
-            "selectBackground": dropdown_select_bg,
-            "selectForeground": dropdown_select_fg,
-            "highlightColor": dropdown_bg,
-            "highlightBackground": dropdown_bg,
-            "borderColor": dropdown_bg,
-            "activeBackground": dropdown_select_bg,
-            "activeForeground": dropdown_select_fg,
-        }
-        for option, value in listbox_colors.items():
-            self.option_add(f"*TCombobox*Listbox.{option}", value)
-            self.option_add(f"*TCombobox*Listbox*{option}", value)
-        self.option_add("*TCombobox*Foreground", dropdown_fg)
-
-        scrollbar_colors = {
-            "background": colors["button_bg"],
-            "troughcolor": colors["frame"],
-            "arrowcolor": colors["button_fg"],
-            "bordercolor": colors["frame"],
-            "lightcolor": colors["frame"],
-            "darkcolor": colors["frame"],
-        }
-        for orientation in ("Vertical", "Horizontal"):
-            style_name = f"{orientation}.TScrollbar"
-            self.style.configure(style_name, **scrollbar_colors)
-            self.style.map(
-                style_name,
-                background=[("active", colors["button_active_bg"])],
-                arrowcolor=[("active", colors["button_fg"])],
-            )
-
-        dropdown_kwargs = {
-            "background": dropdown_bg,
-            "foreground": dropdown_fg,
-            "select_background": dropdown_select_bg,
-            "select_foreground": dropdown_select_fg,
-        }
-        if hasattr(self, "language_combo"):
-            self._style_combobox_dropdown(self.language_combo, **dropdown_kwargs)
-        if hasattr(self, "theme_combo"):
-            self._style_combobox_dropdown(self.theme_combo, **dropdown_kwargs)
-
-        self.tasks_canvas.configure(background=colors["canvas_bg"], highlightthickness=0)
-        if hasattr(self, "tasks_inner"):
-            self.tasks_inner.configure(style="TaskContainer.TFrame")
-        if hasattr(self, "queue_columns_frame"):
-            self.queue_columns_frame.configure(style="TaskHeader.TFrame")
-        self.preview_image_label.configure(bg=colors["frame"], fg=colors["text"])
-        self.log_widget.configure(
-            bg=colors["log_bg"], fg=colors["log_fg"], insertbackground=colors["log_fg"]
-        )
-
-    def _style_combobox_dropdown(
-        self,
-        combobox: ttk.Combobox,
-        *,
-        background: str,
-        foreground: str,
-        select_background: str,
-        select_foreground: str,
-    ) -> None:
-        try:
-            popdown = self.tk.call("ttk::combobox::PopdownWindow", str(combobox))
-        except tk.TclError:
-            return
-
-        try:
-            popdown_widget = self.nametowidget(popdown)
-            popdown_widget.configure(bg=background)
-        except (tk.TclError, KeyError):
-            popdown_widget = None
-
-        frame_path = f"{popdown}.f"
-        try:
-            frame_widget = self.nametowidget(frame_path)
-        except (tk.TclError, KeyError):
-            frame_widget = None
-
-        listbox_path = f"{frame_path}.l"
-        try:
-            listbox_widget = self.nametowidget(listbox_path)
-        except (tk.TclError, KeyError):
-            listbox_widget = None
-
-        if frame_widget is not None:
-            frame_widget.configure(bg=background)
-        if popdown_widget is not None:
-            popdown_widget.configure(bg=background)
-        if listbox_widget is None:
-            return
-
-        listbox_widget.configure(
-            background=background,
-            foreground=foreground,
-            selectbackground=select_background,
-            selectforeground=select_foreground,
-            highlightcolor=background,
-            highlightbackground=background,
-            activestyle="none",
-        )
 
     def _store_language(self, code: str) -> None:
         self.settings["language"] = code
@@ -1500,7 +1479,8 @@ class DownloaderUI(tk.Tk):
 
     def _on_ctrl_keypress(self, event: tk.Event) -> str | None:  # type: ignore[override]
         widget = event.widget
-        if not isinstance(widget, (tk.Entry, tk.Text, scrolledtext.ScrolledText)):
+        editable_classes = (ctk.CTkEntry, ctk.CTkTextbox, tk.Entry, tk.Text)
+        if not isinstance(widget, editable_classes):
             return None
         keysym = getattr(event, "keysym", "")
         if isinstance(keysym, str) and keysym.lower() in {"v", "c", "x", "a"}:
@@ -1584,37 +1564,38 @@ class DownloaderUI(tk.Tk):
     def _build_update_dialog(self) -> None:
         self._log_update_event("Building update view")
         if self.update_view is None:
-            container = ttk.Frame(self, padding=24)
-            container.grid(row=0, column=0, sticky="nsew")
+            container = ctk.CTkFrame(self, corner_radius=12, fg_color="transparent")
+            container.grid(row=0, column=0, sticky="nsew", padx=24, pady=24)
             self.grid_rowconfigure(0, weight=1)
             self.grid_columnconfigure(0, weight=1)
 
-            self.update_title_label = ttk.Label(
+            self.update_title_label = ctk.CTkLabel(
                 container,
                 textvariable=self.update_title_var,
-                font=("Segoe UI", 14, "bold"),
+                font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
                 anchor="center",
                 justify="center",
             )
             self.update_title_label.pack(fill="x", pady=(0, 12))
 
-            message_label = ttk.Label(
+            message_label = ctk.CTkLabel(
                 container,
                 textvariable=self.update_dialog_message_var,
                 justify="center",
                 wraplength=460,
+                anchor="center",
             )
             message_label.pack(fill="x", padx=6, pady=(0, 18))
 
-            progress = ttk.Progressbar(container, mode="indeterminate", length=260)
+            progress = ctk.CTkProgressBar(container, mode="indeterminate")
             progress.pack(fill="x", padx=30, pady=(0, 24))
             self.update_dialog_progress = progress
 
-            button_frame = ttk.Frame(container)
+            button_frame = ctk.CTkFrame(container, fg_color="transparent")
             button_frame.pack(fill="x", pady=(0, 12))
             self.update_button_frame = button_frame
-            self.update_secondary_button = ttk.Button(button_frame)
-            self.update_primary_button = ttk.Button(button_frame)
+            self.update_secondary_button = ctk.CTkButton(button_frame)
+            self.update_primary_button = ctk.CTkButton(button_frame)
             self.update_secondary_button.pack_forget()
             self.update_primary_button.pack_forget()
 
@@ -1650,9 +1631,9 @@ class DownloaderUI(tk.Tk):
         if self.update_button_frame is None:
             return
         if self.update_secondary_button is None:
-            self.update_secondary_button = ttk.Button(self.update_button_frame)
+            self.update_secondary_button = ctk.CTkButton(self.update_button_frame)
         if self.update_primary_button is None:
-            self.update_primary_button = ttk.Button(self.update_button_frame)
+            self.update_primary_button = ctk.CTkButton(self.update_button_frame)
 
         self.update_primary_button.pack_forget()
         self.update_secondary_button.pack_forget()
