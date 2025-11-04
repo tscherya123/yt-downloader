@@ -88,6 +88,8 @@ class DownloaderUI(DownloaderApp):
         self._post_update_check_job: Optional[str] = None
         self._update_check_started_at: Optional[float] = None
         self._update_check_finished_at: Optional[float] = None
+        self._update_check_timeout_job: Optional[str] = None
+        self._update_check_attempt = 0
         self.pending_update_info: Optional[UpdateInfo] = None
         self.pending_install_result: Optional[InstallResult] = None
         self._update_download_total: Optional[int] = None
@@ -1556,8 +1558,7 @@ class DownloaderUI(DownloaderApp):
 
         def _start_worker() -> None:
             self._update_check_start_job = None
-            self._update_check_started_at = time.monotonic()
-            threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+            self._start_update_check_worker()
 
         self._update_check_start_job = str(self.after(1000, _start_worker))
 
@@ -1694,6 +1695,7 @@ class DownloaderUI(DownloaderApp):
             except tk.TclError:
                 pass
             self._post_update_check_job = None
+        self._cancel_update_check_timeout()
         if self._update_auto_close_after is not None:
             try:
                 self.after_cancel(self._update_auto_close_after)
@@ -1730,9 +1732,22 @@ class DownloaderUI(DownloaderApp):
         if show_main:
             self._show_main_window()
 
-    def _check_for_updates_worker(self) -> None:
+    def _start_update_check_worker(self) -> None:
+        attempt = self._update_check_attempt + 1
+        self._update_check_attempt = attempt
+        self._update_check_started_at = time.monotonic()
+        self._log_update_event("Update worker starting", extra={"attempt": attempt})
+        self._schedule_update_check_timeout(attempt)
+        threading.Thread(
+            target=self._check_for_updates_worker,
+            args=(attempt,),
+            daemon=True,
+        ).start()
+
+    def _check_for_updates_worker(self, attempt: int) -> None:
         self._log_update_event(
-            "Update worker started", extra={"current_version": self.app_version}
+            "Update worker started",
+            extra={"current_version": self.app_version, "attempt": attempt},
         )
         try:
             info = check_for_update(self.app_version)
@@ -1743,6 +1758,7 @@ class DownloaderUI(DownloaderApp):
             self.after(
                 0,
                 lambda: self._queue_post_update_check(
+                    attempt,
                     lambda: self._on_update_check_failed(str(exc))
                 ),
             )
@@ -1755,6 +1771,7 @@ class DownloaderUI(DownloaderApp):
             self.after(
                 0,
                 lambda: self._queue_post_update_check(
+                    attempt,
                     lambda: self._on_update_check_failed(str(exc))
                 ),
             )
@@ -1769,11 +1786,19 @@ class DownloaderUI(DownloaderApp):
             self.after(
                 0,
                 lambda: self._queue_post_update_check(
+                    attempt,
                     lambda: self._on_update_check_completed(info)
                 ),
             )
 
-    def _queue_post_update_check(self, callback: Callable[[], None]) -> None:
+    def _queue_post_update_check(self, attempt: int, callback: Callable[[], None]) -> None:
+        if attempt != self._update_check_attempt:
+            self._log_update_event(
+                "Ignoring stale update check result",
+                extra={"attempt": attempt, "active_attempt": self._update_check_attempt},
+            )
+            return
+        self._cancel_update_check_timeout()
         self._update_check_finished_at = time.monotonic()
         if self._post_update_check_job is not None:
             try:
@@ -1878,6 +1903,75 @@ class DownloaderUI(DownloaderApp):
             args=(info,),
             daemon=True,
         ).start()
+
+    def _schedule_update_check_timeout(self, attempt: int, timeout_ms: int = 15000) -> None:
+        self._cancel_update_check_timeout()
+
+        def _on_timeout() -> None:
+            self._update_check_timeout_job = None
+            if attempt != self._update_check_attempt:
+                return
+            if self._update_check_finished_at is not None:
+                return
+            self._on_update_check_timeout()
+
+        try:
+            self._update_check_timeout_job = str(self.after(timeout_ms, _on_timeout))
+        except tk.TclError:
+            _on_timeout()
+
+    def _cancel_update_check_timeout(self) -> None:
+        if self._update_check_timeout_job is None:
+            return
+        try:
+            self.after_cancel(self._update_check_timeout_job)
+        except tk.TclError:
+            pass
+        finally:
+            self._update_check_timeout_job = None
+
+    def _on_update_check_timeout(self) -> None:
+        if self._update_check_finished_at is not None:
+            return
+        elapsed = None
+        if self._update_check_started_at is not None:
+            elapsed = time.monotonic() - self._update_check_started_at
+        self._log_update_event(
+            "Update check timed out",
+            extra={"elapsed": elapsed},
+        )
+        if self.update_dialog_progress is not None:
+            try:
+                self.update_dialog_progress.stop()
+            except tk.TclError:
+                pass
+            self.update_dialog_progress.configure(mode="determinate", maximum=100, value=0)
+        self._set_update_dialog_title("update_check_title")
+        self._set_update_dialog_message("update_check_timeout")
+        self._configure_update_dialog_buttons(
+            primary=("update_button_continue", lambda: self._close_update_dialog(True)),
+            secondary=("update_button_retry", self._retry_update_check),
+        )
+        self._set_update_dialog_closable(True)
+
+    def _retry_update_check(self) -> None:
+        self._log_update_event(
+            "Retrying update check",
+            extra={"previous_attempt": self._update_check_attempt},
+        )
+        if self.update_dialog_progress is not None:
+            self.update_dialog_progress.configure(mode="indeterminate")
+            try:
+                self.update_dialog_progress.start(15)
+            except tk.TclError:
+                pass
+        self._configure_update_dialog_buttons()
+        self._set_update_dialog_title("update_check_title")
+        self._set_update_dialog_message("update_check_message")
+        self._set_update_dialog_closable(False)
+        self._update_check_started_at = None
+        self._update_check_finished_at = None
+        self._start_update_check_worker()
 
     def _handle_download_progress(self, downloaded: int, total: Optional[int]) -> None:
         self.after(0, lambda: self._update_download_progress_ui(downloaded, total))
