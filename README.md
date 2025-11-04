@@ -20,6 +20,7 @@
 - Python 3.10 або новіший (під час інсталяції на Windows не забудьте позначити **Add Python to PATH**).
 - [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) – відповідає за завантаження відео.
 - [`ffmpeg`](https://ffmpeg.org/) – забезпечує інструменти `ffmpeg` та `ffprobe` для перекодування і аналізу медіа.
+- [`customtkinter`](https://github.com/TomSchimansky/CustomTkinter) – сучасні віджети та теми для інтерфейсу.
 - Опційно: [`Pillow`](https://python-pillow.org/) – дозволяє відображати обкладинки у форматах JPEG/WebP.
 
 ### Детальна інструкція для Windows
