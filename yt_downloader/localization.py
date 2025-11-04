@@ -70,6 +70,19 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Version {version} has been installed and launched. This window will close.",
     },
     "update_button_exit": {"uk": "Закрити", "en": "Close"},
+    "update_install_ready_restart": {
+        "uk": "Версію {version} завантажено. Щоб завершити оновлення, перезапустіть застосунок.",
+        "en": "Version {version} has been downloaded. Restart the app to finish updating.",
+    },
+    "update_install_restarting": {
+        "uk": "Застосунок перезапускається для встановлення версії {version}…",
+        "en": "Restarting to install version {version}…",
+    },
+    "update_install_self_update_failed": {
+        "uk": "Не вдалося автоматично замінити файл: {error}. Оновлення збережено у {path}.",
+        "en": "Automatic replacement failed: {error}. The update is saved in {path}.",
+    },
+    "update_button_restart": {"uk": "Перезапустити", "en": "Restart"},
     "update_install_launch_failed": {
         "uk": "Версію {version} збережено в {path}, але не вдалося запустити файл: {error}",
         "en": "Version {version} was saved to {path}, but launching it failed: {error}",
