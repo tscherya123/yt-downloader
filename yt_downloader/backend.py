@@ -84,7 +84,8 @@ def download_video(
     url: str,
     workdir: Path,
     tempdir: Path,
-    clip_section: Optional[str] = None,
+    clip_start: Optional[float] = None,
+    clip_end: Optional[float] = None,
     progress_hooks: Optional[Iterable[Callable[[Dict[str, Any]], None]]] = None,
 ) -> Path:
     """Download ``url`` into ``workdir`` and return the resulting file path."""
@@ -106,12 +107,16 @@ def download_video(
     }
     if progress_hooks:
         options["progress_hooks"] = list(progress_hooks)
-    if clip_section:
-        options.update(
-            {
-                "download_sections": [clip_section],
-            }
-        )
+
+    if clip_start is not None or clip_end is not None:
+        # ``download_ranges`` expects absolute seconds and performs partial downloads
+        start = 0.0 if clip_start is None else max(clip_start, 0.0)
+        end = float("inf") if clip_end is None else clip_end
+        if end <= start:
+            raise ValueError("clip_end must be greater than clip_start")
+        download_ranges = context.module.utils.download_range_func([], [(start, end)], False)
+        options["download_ranges"] = download_ranges
+        options["force_keyframes_at_cuts"] = True
     with context.YoutubeDL(options) as ydl:
         ydl.download([url])
 
