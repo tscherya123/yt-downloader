@@ -8,7 +8,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Optional
 
 __all__ = [
     "BackendError",
@@ -84,7 +84,7 @@ def download_video(
     url: str,
     workdir: Path,
     tempdir: Path,
-    clip_arguments: Optional[Iterable[str]] = None,
+    clip_section: Optional[str] = None,
     progress_hooks: Optional[Iterable[Callable[[Dict[str, Any]], None]]] = None,
 ) -> Path:
     """Download ``url`` into ``workdir`` and return the resulting file path."""
@@ -106,15 +106,12 @@ def download_video(
     }
     if progress_hooks:
         options["progress_hooks"] = list(progress_hooks)
-    if clip_arguments:
-        clip_args = list(clip_arguments)
-        if clip_args:
-            options.update(
-                {
-                    "downloader": "ffmpeg",
-                    "downloader_args": {"ffmpeg_i": clip_args},
-                }
-            )
+    if clip_section:
+        options.update(
+            {
+                "download_sections": [clip_section],
+            }
+        )
     with context.YoutubeDL(options) as ydl:
         ydl.download([url])
 
