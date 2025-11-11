@@ -99,30 +99,19 @@ class DownloadWorker(threading.Thread):
                 self._log(self._t("log_segment", start=human_start, end=human_end))
 
             clip_requested = self.start_seconds > 0 or self.end_seconds is not None
-            clip_section: Optional[str] = None
-            if clip_requested:
-                start = format_timestamp(self.start_seconds) if self.start_seconds > 0 else "00:00"
-                end = format_timestamp(self.end_seconds) if self.end_seconds is not None else None
-                if start.count(":") == 1:
-                    start = f"00:{start}"
-                if end is not None and end.count(":") == 1:
-                    end = f"00:{end}"
-                clip_section = f"*{start}-"
-                if end is not None:
-                    clip_section = f"{clip_section}{end}"
-
             self._log(self._t("log_download_step"))
             try:
                 src = download_video(
                     url=self.url,
                     workdir=workdir,
                     tempdir=tempdir,
-                    clip_section=clip_section,
+                    clip_start=self.start_seconds if clip_requested else None,
+                    clip_end=self.end_seconds if clip_requested else None,
                 )
             except BackendError as exc:
                 raise RuntimeError(str(exc)) from exc
 
-            clip_applied_during_download = bool(clip_section)
+            clip_applied_during_download = clip_requested
 
             if not src:
                 raise RuntimeError(self._t("error_missing_source"))
