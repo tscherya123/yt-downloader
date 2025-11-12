@@ -108,6 +108,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "В окрему папку",
         "en": "Use separate folder",
     },
+    "convert_to_mp4": {
+        "uk": "Конвертувати в MP4 (довше)",
+        "en": "Convert to MP4 (slower)",
+    },
     "download_button": {"uk": "Скачати", "en": "Download"},
     "preview_group": {"uk": "Попередній перегляд", "en": "Preview"},
     "preview_title": {"uk": "Назва: {title}", "en": "Title: {title}"},

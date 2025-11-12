@@ -102,6 +102,16 @@ class DownloaderUI(DownloaderApp):
         self.theme = self._coerce_theme(self.settings.get("theme"))
         self.current_palette: dict[str, str] = {}
 
+        convert_setting = self.settings.get("convert_to_mp4")
+        if isinstance(convert_setting, bool):
+            convert_enabled = convert_setting
+        else:
+            convert_enabled = True
+            self.settings["convert_to_mp4"] = convert_enabled
+            self._save_settings()
+        self.convert_to_mp4_var = ctk.BooleanVar(value=convert_enabled)
+        self.convert_to_mp4_var.trace_add("write", self._on_convert_to_mp4_toggle)
+
         self.update_cache_dir = self.config_dir / "updates"
 
         self._set_window_title()
@@ -234,7 +244,16 @@ class DownloaderUI(DownloaderApp):
             offvalue=False,
             font=self.base_font,
         )
-        self.separate_check.grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        self.separate_check.grid(row=2, column=0, sticky="w", pady=(12, 0))
+        self.convert_check = ctk.CTkCheckBox(
+            left_frame,
+            text=self._("convert_to_mp4"),
+            variable=self.convert_to_mp4_var,
+            onvalue=True,
+            offvalue=False,
+            font=self.base_font,
+        )
+        self.convert_check.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(12, 0))
         self.download_button = ctk.CTkButton(
             left_frame,
             text=self._("download_button"),
@@ -595,6 +614,7 @@ class DownloaderUI(DownloaderApp):
             root=root_path,
             title=self.preview_info.get("title"),
             separate_folder=self.separate_var.get(),
+            convert_to_mp4=self.convert_to_mp4_var.get(),
             start_seconds=start_seconds,
             end_seconds=clip_end_for_worker,
             event_queue=self.event_queue,
@@ -1173,6 +1193,7 @@ class DownloaderUI(DownloaderApp):
         self.root_label.configure(text=self._("root_label"))
         self.browse_button.configure(text=self._("choose_button"))
         self.separate_check.configure(text=self._("separate_folder"))
+        self.convert_check.configure(text=self._("convert_to_mp4"))
         self.download_button.configure(text=self._("download_button"))
         self.preview_frame_label.configure(text=self._("preview_group"))
         self.queue_frame_label.configure(text=self._("queue_group"))
@@ -1327,13 +1348,16 @@ class DownloaderUI(DownloaderApp):
                 disabled_text=disabled_text,
             )
 
-        self.separate_check.configure(
-            text_color=text,
-            fg_color=accent,
-            border_color=accent,
-            hover_color=hover,
-            checkmark_color=surface or "white",
-        )
+        for checkbox in (getattr(self, "separate_check", None), getattr(self, "convert_check", None)):
+            if checkbox is None:
+                continue
+            checkbox.configure(
+                text_color=text,
+                fg_color=accent,
+                border_color=accent,
+                hover_color=hover,
+                checkmark_color=surface or "white",
+            )
 
         combo_kwargs = {
             "fg_color": entry_color,
@@ -1429,6 +1453,12 @@ class DownloaderUI(DownloaderApp):
     def _store_theme(self, code: str) -> None:
         self.settings["theme"] = code
         self._save_settings()
+
+    def _on_convert_to_mp4_toggle(self, *_: object) -> None:
+        value = self.convert_to_mp4_var.get()
+        if self.settings.get("convert_to_mp4") != value:
+            self.settings["convert_to_mp4"] = value
+            self._save_settings()
 
     def _(self, key: str, **kwargs: object) -> str:
         return translate(self.language, key, **kwargs)
