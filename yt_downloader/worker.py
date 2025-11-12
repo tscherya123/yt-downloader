@@ -32,6 +32,7 @@ class DownloadWorker(threading.Thread):
         root: Path,
         title: Optional[str],
         separate_folder: bool,
+        convert_to_mp4: bool,
         start_seconds: float,
         end_seconds: Optional[float],
         event_queue: "queue.Queue[dict[str, object]]",
@@ -43,6 +44,7 @@ class DownloadWorker(threading.Thread):
         self.root = root
         self.title = title
         self.separate_folder = separate_folder
+        self.convert_to_mp4 = convert_to_mp4
         self.start_seconds = max(start_seconds, 0.0)
         self.end_seconds = end_seconds
         self.event_queue = event_queue
@@ -120,16 +122,25 @@ class DownloadWorker(threading.Thread):
             video_codec, audio_codec = self._probe_codecs(src)
             self._log(self._t("log_codecs", video=video_codec, audio=audio_codec))
 
-            final_path = workdir / f"{sanitized_title}.mp4"
-            needs_transcode = not (
-                video_codec.lower() == "h264" and audio_codec.lower() == "aac"
-            )
+            if self.convert_to_mp4:
+                final_path = workdir / f"{sanitized_title}.mp4"
+                needs_transcode = not (
+                    video_codec.lower() == "h264" and audio_codec.lower() == "aac"
+                )
+            else:
+                suffix = src.suffix
+                final_name = f"{sanitized_title}{suffix}" if suffix else sanitized_title
+                final_path = workdir / final_name
+                needs_transcode = False
 
             if not needs_transcode and not clip_applied_during_download:
                 self._log(self._t("log_skip_transcode"))
                 self._check_cancelled()
-                src.rename(final_path)
-                final_destination = final_path
+                if src.name == final_path.name:
+                    final_destination = final_path
+                else:
+                    src.rename(final_path)
+                    final_destination = final_path
             else:
                 self._status("converting")
                 ffmpeg_args = [self._ffmpeg(), "-hide_banner", "-stats", "-y"]
@@ -143,6 +154,13 @@ class DownloadWorker(threading.Thread):
                 if clip_during_ffmpeg and self.end_seconds is not None:
                     segment = max(self.end_seconds - self.start_seconds, 0.0)
                     ffmpeg_args.extend(["-t", format_timestamp(segment)])
+
+                output_path = final_path
+                if output_path == src:
+                    temp_suffix = final_path.suffix
+                    temp_stem = final_path.stem or "output"
+                    temp_name = f"{temp_stem}_tmp{temp_suffix}" if temp_suffix else f"{temp_stem}_tmp"
+                    output_path = workdir / temp_name
 
                 if needs_transcode:
                     vbit = self._compute_vbit(src)
@@ -172,7 +190,7 @@ class DownloadWorker(threading.Thread):
                             "320k",
                             "-movflags",
                             "+faststart",
-                            final_path.name,
+                            output_path.name,
                         ]
                     )
                 else:
@@ -183,13 +201,17 @@ class DownloadWorker(threading.Thread):
                             "copy",
                             "-c:a",
                             "copy",
-                            "-movflags",
-                            "+faststart",
-                            final_path.name,
                         ]
                     )
+                    if self.convert_to_mp4:
+                        ffmpeg_args.extend(["-movflags", "+faststart"])
+                    ffmpeg_args.append(output_path.name)
 
                 self._run(ffmpeg_args, cwd=workdir)
+                if output_path != final_path:
+                    if final_path.exists():
+                        final_path.unlink()
+                    output_path.rename(final_path)
                 final_destination = final_path
 
             if final_destination is None:
