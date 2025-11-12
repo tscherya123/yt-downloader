@@ -103,8 +103,10 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller --onefile --noconsole ui.py -n yt-downloader --hidden-import=yt_dlp `
+            --icon "yt-dw-logo.ico" `
             --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;."
-          pyinstaller --onefile --noconsole yt_downloader/relauncher.py -n yt-downloader-relauncher
+          pyinstaller --onefile --noconsole yt_downloader/relauncher.py -n yt-downloader-relauncher `
+            --icon "yt-dw-logo.ico"
 
       - name: Package Windows artifact
         env:
