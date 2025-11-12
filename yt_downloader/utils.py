@@ -163,3 +163,36 @@ def resolve_executable(*names: str) -> Optional[Path]:
                         continue
                 return candidate
     return None
+
+
+def resolve_asset_path(*relative_paths: str) -> Optional[Path]:
+    """Return the first existing asset matching ``relative_paths``.
+
+    The lookup searches a handful of locations that cover running from source
+    as well as the frozen PyInstaller bundle used for the Windows release.
+    """
+
+    search_roots: list[Path] = []
+
+    if getattr(sys, "frozen", False):
+        executable_dir = Path(sys.executable).resolve().parent
+        bundle_dir = Path(getattr(sys, "_MEIPASS", executable_dir))
+        search_roots.extend([bundle_dir, executable_dir])
+    else:
+        package_dir = Path(__file__).resolve().parent
+        search_roots.extend([package_dir, package_dir.parent, Path.cwd()])
+
+    seen: set[Path] = set()
+    for root in search_roots:
+        try:
+            resolved_root = root.resolve()
+        except FileNotFoundError:
+            continue
+        if resolved_root in seen:
+            continue
+        seen.add(resolved_root)
+        for relative_path in relative_paths:
+            candidate = resolved_root / relative_path
+            if candidate.exists():
+                return candidate
+    return None

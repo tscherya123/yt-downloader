@@ -49,6 +49,7 @@ from .utils import (
     format_timestamp as _format_timestamp,
     is_youtube_video_url as _is_youtube_video_url,
     parse_time_input as _parse_time_input,
+    resolve_asset_path,
 )
 from .widgets import TaskRow
 from .worker import DownloadWorker
@@ -60,7 +61,31 @@ class DownloaderApp(ctk.CTk):
 
     def __init__(self) -> None:
         super().__init__()
+        self._icon_images: list[tk.PhotoImage] = []
+        self._configure_window_icon()
         self.withdraw()
+
+    def _configure_window_icon(self) -> None:
+        """Attempt to set a branded application icon for the main window."""
+
+        icon_bitmap = resolve_asset_path("yt-dw-logo.ico")
+        if icon_bitmap is not None:
+            try:
+                self.iconbitmap(default=str(icon_bitmap))
+            except Exception:
+                pass
+
+        icon_image_path = resolve_asset_path("yt-dw-logo.png")
+        if icon_image_path is None:
+            return
+
+        try:
+            image = tk.PhotoImage(file=str(icon_image_path))
+        except Exception:
+            return
+
+        self.iconphoto(False, image)
+        self._icon_images.append(image)
 
 
 class DownloaderUI(DownloaderApp):
