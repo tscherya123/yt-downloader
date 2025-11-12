@@ -15,6 +15,7 @@ def test_build_updater_command_contains_expected_arguments(tmp_path) -> None:
     source = tmp_path / "source.exe"
     target = tmp_path / "target.exe"
     log_path = tmp_path / "update.log"
+    relaunch_helper = tmp_path / "relauncher.exe"
     command = build_updater_command(
         source,
         target,
@@ -23,6 +24,8 @@ def test_build_updater_command_contains_expected_arguments(tmp_path) -> None:
         log_path,
         wait_before=0.25,
         max_wait=12.5,
+        relaunch_helper=relaunch_helper,
+        relaunch_wait=0.75,
     )
     assert command[0] == str(Path(sys.executable))
     assert command[1] == "--run-updater"
@@ -33,6 +36,8 @@ def test_build_updater_command_contains_expected_arguments(tmp_path) -> None:
     assert "--log-file" in command
     assert "0.25" in command
     assert "12.5" in command
+    assert "--relaunch-helper" in command
+    assert "--relaunch-wait" in command
 
 
 def test_run_updater_replaces_file(tmp_path) -> None:
@@ -81,6 +86,7 @@ def test_run_updater_launches_with_expected_parameters(monkeypatch, tmp_path) ->
         log_file=None,
         wait_before=0.0,
         max_wait=1.0,
+        relaunch_helper=None,
     )
 
     assert exit_code == 0
@@ -89,6 +95,48 @@ def test_run_updater_launches_with_expected_parameters(monkeypatch, tmp_path) ->
     kwargs = captured["kwargs"]
     assert kwargs["cwd"] == str(tmp_path)
     assert kwargs["close_fds"] is True
+    if os.name == "nt":
+        assert kwargs.get("creationflags", 0)
+
+
+def test_run_updater_uses_relaunch_helper(monkeypatch, tmp_path) -> None:
+    source = tmp_path / "new.exe"
+    target = tmp_path / "app.exe"
+    source.write_text("new-version")
+    target.write_text("old-version")
+    helper = tmp_path / "helper.exe"
+
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_popen(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((cmd, kwargs))
+
+        class _Proc:  # pragma: no cover - behavior doesn't matter
+            pass
+
+        return _Proc()
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    exit_code = run_updater(
+        source=source,
+        target=target,
+        launch_path=target,
+        launch_args=["--foo"],
+        log_file=None,
+        wait_before=0.0,
+        max_wait=1.0,
+        relaunch_helper=helper,
+        relaunch_wait=0.25,
+    )
+
+    assert exit_code == 0
+    assert len(calls) == 1
+    cmd, kwargs = calls[0]
+    assert cmd[0] == str(helper)
+    assert "--target" in cmd
+    assert "--wait" in cmd
+    assert "0.25" in cmd
     if os.name == "nt":
         assert kwargs.get("creationflags", 0)
 
