@@ -1844,7 +1844,7 @@ class DownloaderUI(DownloaderApp):
             self._post_update_check_job = None
             callback()
 
-        delay_ms = 3000
+        delay_ms = 1000
         self._log_update_event(
             "Delaying post update check handling",
             extra={"delay_ms": delay_ms},
@@ -2133,6 +2133,15 @@ class DownloaderUI(DownloaderApp):
         if not current_executable.exists():
             return None
         try:
+            relaunch_helper = current_executable.with_name(
+                f"{current_executable.stem}-relauncher{current_executable.suffix}"
+            )
+            if not relaunch_helper.exists():
+                self._log_update_event(
+                    "Relaunch helper not found, falling back to direct relaunch",
+                    extra={"expected_path": str(relaunch_helper)},
+                )
+                relaunch_helper = None
             command = build_updater_command(
                 result.executable,
                 current_executable,
@@ -2141,6 +2150,8 @@ class DownloaderUI(DownloaderApp):
                 self.update_log_path,
                 wait_before=0.5,
                 max_wait=120.0,
+                relaunch_helper=relaunch_helper,
+                relaunch_wait=0.5,
             )
         except Exception as exc:  # pragma: no cover - defensive
             self._log_update_event(

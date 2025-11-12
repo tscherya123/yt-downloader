@@ -100,7 +100,9 @@ jobs:
         run: pytest
 
       - name: Build application
-        run: pyinstaller --onefile --noconsole ui.py -n yt-downloader --hidden-import=yt_dlp
+        run: |
+          pyinstaller --onefile --noconsole ui.py -n yt-downloader --hidden-import=yt_dlp
+          pyinstaller --onefile --noconsole yt_downloader/relauncher.py -n yt-downloader-relauncher
 
       - name: Package Windows artifact
         env:
@@ -109,6 +111,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path release -Force | Out-Null
           Copy-Item dist\yt-downloader.exe release\yt-downloader.exe -Force
+          Copy-Item dist\yt-downloader-relauncher.exe release\yt-downloader-relauncher.exe -Force
           Copy-Item external-bin\ffmpeg.exe release\ffmpeg.exe -Force
           Copy-Item external-bin\ffprobe.exe release\ffprobe.exe -Force
           Compress-Archive -Path release\* -DestinationPath "release\yt-downloader-$env:VERSION-windows.zip" -Force

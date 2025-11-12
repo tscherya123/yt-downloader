@@ -124,6 +124,8 @@ def run_updater(
     log_file: Optional[Path] = None,
     wait_before: float = 0.5,
     max_wait: float = 90.0,
+    relaunch_helper: Optional[Path] = None,
+    relaunch_wait: float = 0.5,
 ) -> int:
     """Perform the replacement and optionally relaunch the application."""
 
@@ -154,7 +156,31 @@ def run_updater(
         args = [str(launch_path)]
         if launch_args:
             args.extend(launch_args)
-        _LOGGER.info("Launching new executable: %s", args)
+        _LOGGER.info("Preparing relaunch: %s", args)
+
+        if relaunch_helper:
+            helper_args = [str(relaunch_helper), "--target", str(launch_path), "--wait", str(relaunch_wait)]
+            if launch_args:
+                helper_args.extend(["--args-json", json.dumps(list(launch_args))])
+            helper_kwargs: dict[str, object] = {"close_fds": True}
+            if relaunch_helper.parent:
+                helper_kwargs["cwd"] = str(relaunch_helper.parent)
+            if os.name == "nt":  # pragma: no cover - platform dependent
+                creation_flags = 0
+                creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+                creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                creation_flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                if creation_flags:
+                    helper_kwargs["creationflags"] = creation_flags
+            try:
+                subprocess.Popen(helper_args, **helper_kwargs)
+                _LOGGER.info("Relaunch helper started: %s", helper_args)
+                _LOGGER.info("Updater finished successfully")
+                return 0
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.error("Failed to launch relaunch helper: %s", exc)
+
+        _LOGGER.info("Falling back to launching executable directly")
         popen_kwargs: dict[str, object] = {
             "close_fds": True,
             "cwd": str(launch_path.parent),
@@ -164,6 +190,7 @@ def run_updater(
             creation_flags = 0
             creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
             creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            creation_flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
             if creation_flags:
                 popen_kwargs["creationflags"] = creation_flags
         try:
@@ -184,6 +211,8 @@ def build_updater_command(
     log_file: Optional[Path],
     wait_before: float = 0.5,
     max_wait: float = 90.0,
+    relaunch_helper: Optional[Path] = None,
+    relaunch_wait: float = 0.5,
 ) -> list[str]:
     """Return command-line arguments to invoke the updater helper."""
 
@@ -206,6 +235,9 @@ def build_updater_command(
         command.extend(["--launch-args-json", json.dumps(launch_list)])
     if log_file:
         command.extend(["--log-file", str(log_file)])
+    if relaunch_helper:
+        command.extend(["--relaunch-helper", str(relaunch_helper)])
+        command.extend(["--relaunch-wait", str(relaunch_wait)])
     return command
 
 
@@ -219,11 +251,14 @@ def run_from_cli(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--log-file")
     parser.add_argument("--wait-before", type=float, default=0.5)
     parser.add_argument("--max-wait", type=float, default=90.0)
+    parser.add_argument("--relaunch-helper")
+    parser.add_argument("--relaunch-wait", type=float, default=0.5)
 
     args = parser.parse_args(argv)
     launch_args = _parse_launch_args(args.launch_args_json)
     launch_path = Path(args.launch) if args.launch else None
     log_path = Path(args.log_file) if args.log_file else None
+    relaunch_helper = Path(args.relaunch_helper) if args.relaunch_helper else None
 
     return run_updater(
         source=Path(args.source),
@@ -233,6 +268,8 @@ def run_from_cli(argv: Optional[Sequence[str]] = None) -> int:
         log_file=log_path,
         wait_before=args.wait_before,
         max_wait=args.max_wait,
+        relaunch_helper=relaunch_helper,
+        relaunch_wait=args.relaunch_wait,
     )
 
 
