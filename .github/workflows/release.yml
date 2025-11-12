@@ -100,8 +100,10 @@ jobs:
         run: pytest
 
       - name: Build application
+        shell: pwsh
         run: |
-          pyinstaller --onefile --noconsole ui.py -n yt-downloader --hidden-import=yt_dlp
+          pyinstaller --onefile --noconsole ui.py -n yt-downloader --hidden-import=yt_dlp `
+            --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;."
           pyinstaller --onefile --noconsole yt_downloader/relauncher.py -n yt-downloader-relauncher
 
       - name: Package Windows artifact
