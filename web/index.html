@@ -32,7 +32,7 @@
         .trim-handle:last-child { right: 0%; transform: translate(50%, -50%); }
     </style>
 </head>
-<body class="h-screen flex flex-col border border-zinc-800 rounded-2xl overflow-hidden">
+<body class="h-screen min-h-[920px] flex flex-col border border-zinc-800 rounded-2xl overflow-hidden">
     <!-- TITLE BAR -->
     <div class="h-11 bg-[#1a1a1f] border-b border-zinc-800 flex items-center justify-between px-4 drag-handle pywebview-drag-region">
         <div class="flex items-center gap-2 text-sm text-zinc-200">
@@ -41,6 +41,7 @@
         </div>
         <div class="flex items-center gap-3 no-drag">
             <button onclick="pywebview.api.minimize_window()" class="text-zinc-500 hover:text-white" style="-webkit-app-region: no-drag;"><i class="fa-solid fa-minus"></i></button>
+            <button onclick="pywebview.api.toggle_fullscreen()" class="text-zinc-500 hover:text-white" style="-webkit-app-region: no-drag;"><i class="fa-regular fa-square"></i></button>
             <button onclick="pywebview.api.close_window()" class="text-zinc-500 hover:text-red-500" style="-webkit-app-region: no-drag;"><i class="fa-solid fa-xmark"></i></button>
         </div>
     </div>
@@ -71,7 +72,7 @@
                         <i class="fa-solid fa-folder text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
                         <input id="path-input" type="text" readonly class="w-full bg-[#27272a] border border-zinc-700 rounded-lg py-3 pl-10 pr-3 text-sm text-zinc-400 cursor-default" placeholder="Оберіть папку">
                     </div>
-                    <button onclick="pywebview.api.select_folder().then(p => { if(p) { document.getElementById('path-input').value = p; } })" class="h-[46px] px-4 bg-[#27272a] border border-zinc-700 rounded-lg text-white hover:border-indigo-500 transition">
+                    <button onclick="chooseFolder()" class="h-[46px] px-4 bg-[#27272a] border border-zinc-700 rounded-lg text-white hover:border-indigo-500 transition">
                         <i class="fa-solid fa-ellipsis"></i>
                     </button>
                 </div>
@@ -182,22 +183,62 @@
             idle: 'Початок...'
         };
 
+        const tasks = new Map();
+        const settingsState = { root_folder: '', mp4: true, sequential: false };
         let currentMetadata = null;
 
         window.onload = function() {
             resetPreview();
 
+            document.addEventListener('click', (event) => {
+                if (!event.target.closest('.task-menu') && !event.target.closest('.menu-trigger')) {
+                    closeAllMenus();
+                }
+            });
+
+            const mp4Toggle = document.getElementById('chk-mp4');
+            const queueToggle = document.getElementById('chk-queue');
+
+            if (mp4Toggle) {
+                mp4Toggle.addEventListener('change', (e) => {
+                    settingsState.mp4 = e.target.checked;
+                    pywebview?.api?.update_setting?.('mp4', settingsState.mp4);
+                });
+            }
+
+            if (queueToggle) {
+                queueToggle.addEventListener('change', (e) => {
+                    settingsState.sequential = e.target.checked;
+                    pywebview?.api?.update_setting?.('sequential', settingsState.sequential);
+                });
+            }
+
             if (pywebview?.api?.get_init_data) {
                 pywebview.api.get_init_data().then(data => {
                     const versionEl = document.getElementById('app-version');
                     const pathInput = document.getElementById('path-input');
-                    const mp4Toggle = document.getElementById('chk-mp4');
-                    const queueToggle = document.getElementById('chk-queue');
+
+                    const settings = data?.settings || {};
+                    settingsState.root_folder = settings.root_folder || '';
+                    settingsState.mp4 = Boolean(settings.mp4 ?? true);
+                    settingsState.sequential = Boolean(settings.sequential ?? false);
 
                     if (versionEl) versionEl.textContent = data?.version || '—';
-                    if (pathInput && data?.root_folder) pathInput.value = data.root_folder;
-                    if (mp4Toggle) mp4Toggle.checked = Boolean(data?.convert_mp4 ?? true);
-                    if (queueToggle) queueToggle.checked = Boolean(data?.sequential ?? false);
+                    if (pathInput && settingsState.root_folder) pathInput.value = settingsState.root_folder;
+                    if (mp4Toggle) mp4Toggle.checked = settingsState.mp4;
+                    if (queueToggle) queueToggle.checked = settingsState.sequential;
+
+                    const history = Array.isArray(data?.history) ? data.history : [];
+                    history.forEach(item => {
+                        registerTask({
+                            id: item.id,
+                            title: item.title || item.url || item.id,
+                            url: item.url || '',
+                            status: item.status || 'done',
+                            path: item.path || '',
+                            error: item.error || ''
+                        });
+                    });
                 }).catch(() => {
                     const versionEl = document.getElementById('app-version');
                     if (versionEl) versionEl.textContent = '—';
@@ -245,6 +286,16 @@
             setDownloadButtonDisabled(true);
         }
 
+        function chooseFolder() {
+            pywebview.api.select_folder().then(p => {
+                if (p) {
+                    document.getElementById('path-input').value = p;
+                    settingsState.root_folder = p;
+                    pywebview?.api?.update_setting?.('root_folder', p);
+                }
+            });
+        }
+
         function searchVideo() {
             const url = document.getElementById('url-input').value.trim();
             if (!url) return alert('Будь ласка, введіть посилання');
@@ -285,14 +336,11 @@
         }
 
         function updateQueueCount() {
-            const list = document.getElementById('download-list');
-            const count = list.children.length;
-            document.getElementById('queue-count').textContent = count;
+            document.getElementById('queue-count').textContent = tasks.size;
         }
 
         function clearAll() {
-            document.getElementById('download-list').innerHTML = '';
-            updateQueueCount();
+            Array.from(tasks.keys()).forEach(id => removeTask(id));
         }
 
         function initiateDownload() {
@@ -304,10 +352,10 @@
 
             const titleHint = (currentMetadata && currentMetadata.title) || document.getElementById('preview-title').textContent.trim();
 
-            pywebview.api.start_download(url, path, { mp4: mp4 }, titleHint).then(res => {
+            pywebview.api.start_download(url, path, { mp4: mp4, sequential: settingsState.sequential }, titleHint).then(res => {
                 if (res.status === 'ok') {
                     const label = titleHint || url;
-                    createTaskCard(res.task_id, label);
+                    registerTask({ id: res.task_id, title: label, url, status: 'downloading', path: '', error: '' });
                     document.getElementById('url-input').value = '';
                     resetPreview();
                 } else {
@@ -318,44 +366,71 @@
             });
         }
 
-        function createTaskCard(id, title) {
+        function registerTask(task) {
+            if (!task?.id) return;
+            const normalized = {
+                id: task.id,
+                title: task.title || task.url || task.id,
+                url: task.url || '',
+                status: task.status || 'downloading',
+                path: task.path || '',
+                error: task.error || ''
+            };
+            tasks.set(normalized.id, normalized);
+            createTaskCard(normalized);
+            setCardState(normalized);
+            updateQueueCount();
+        }
+
+        function createTaskCard(task) {
+            const existing = document.getElementById(`card-${task.id}`);
+            if (existing) {
+                document.getElementById(`title-${task.id}`).textContent = task.title;
+                return;
+            }
+
             const list = document.getElementById('download-list');
             const card = document.createElement('div');
-            card.id = `card-${id}`;
+            card.id = `card-${task.id}`;
             card.className = 'bg-[#18181b] border border-zinc-800 rounded-2xl p-4 shadow-lg transition relative overflow-hidden';
             card.innerHTML = `
                 <div class="flex items-start gap-3">
-                    <div class="w-10 h-10 rounded-full bg-[#24242a] border border-zinc-700 flex items-center justify-center text-indigo-400" id="icon-${id}">
+                    <div class="w-10 h-10 rounded-full bg-[#24242a] border border-zinc-700 flex items-center justify-center text-indigo-400" id="icon-${task.id}">
                         <i class="fa-solid fa-cloud-arrow-down"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0">
-                                <h4 class="text-sm font-semibold text-white truncate" id="title-${id}">${title}</h4>
-                                <div class="text-xs text-zinc-500 mt-1" id="status-${id}">${statusLabels.idle}</div>
+                                <h4 class="text-sm font-semibold text-white truncate" id="title-${task.id}">${task.title}</h4>
+                                <div class="text-xs text-zinc-500 mt-1" id="status-${task.id}">${statusLabels[task.status] || statusLabels.idle}</div>
                             </div>
                             <div class="flex items-center gap-2">
-                                <button id="open-${id}" onclick="openResult('${id}')" disabled class="px-3 py-2 rounded-xl text-xs border border-zinc-700 text-zinc-500 bg-[#202023] cursor-not-allowed flex items-center gap-2">
+                                <button id="open-${task.id}" onclick="openFolder('${task.id}')" class="px-3 py-2 rounded-xl text-xs border border-zinc-700 text-zinc-300 bg-[#202023] flex items-center gap-2">
                                     <i class="fa-regular fa-folder-open"></i>
                                     <span>Папка</span>
                                 </button>
-                                <button id="cancel-${id}" onclick="cancelTask('${id}')" class="w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-300 hover:border-indigo-500">
-                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                <button id="play-${task.id}" onclick="playFile('${task.id}')" class="w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-400 hover:border-indigo-500">
+                                    <i class="fa-solid fa-play"></i>
                                 </button>
+                                <div class="relative task-menu">
+                                    <button id="menu-${task.id}-btn" class="menu-trigger w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-300 hover:border-indigo-500" onclick="toggleMenu('${task.id}')">
+                                        <i class="fa-solid fa-ellipsis-vertical"></i>
+                                    </button>
+                                    <div id="menu-${task.id}" class="hidden absolute right-0 top-11 w-48 bg-[#1f1f24] border border-zinc-700 rounded-xl shadow-xl z-20 overflow-hidden"></div>
+                                </div>
                             </div>
                         </div>
                         <div class="flex justify-between items-center mt-2 text-xs text-zinc-500">
-                            <span id="speed-${id}">0%</span>
-                            <span class="font-mono text-indigo-300" id="percent-${id}">0%</span>
+                            <span id="speed-${task.id}">0%</span>
+                            <span class="font-mono text-indigo-300" id="percent-${task.id}">0%</span>
                         </div>
                     </div>
                 </div>
                 <div class="mt-3 w-full bg-[#202023] h-2 rounded-full overflow-hidden">
-                    <div id="prog-${id}" class="h-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-300" style="width: 0%"></div>
+                    <div id="prog-${task.id}" class="h-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-300" style="width: 0%"></div>
                 </div>
             `;
             list.insertAdjacentElement('afterbegin', card);
-            updateQueueCount();
         }
 
         function updateProgress(id, percent, speedText) {
@@ -368,100 +443,171 @@
             if (speed && speedText) speed.textContent = speedText;
         }
 
-        function updateStatus(id, statusText) {
-            const statusEl = document.getElementById('status-' + id);
-            if (statusEl) statusEl.textContent = statusText;
-        }
-
-        function setCardState(id, state, info = {}) {
+        function setCardState(task) {
+            const id = task.id;
             const card = document.getElementById('card-' + id);
             const icon = document.getElementById('icon-' + id);
             const statusEl = document.getElementById('status-' + id);
-            const cancelBtn = document.getElementById('cancel-' + id);
             const openBtn = document.getElementById('open-' + id);
+            const playBtn = document.getElementById('play-' + id);
 
             if (!card) return;
 
-            card.classList.remove('animate-pulse');
-            if (state === 'done') {
+            card.classList.remove('border-green-500/40', 'border-red-500/40');
+            if (statusEl) statusEl.className = 'text-xs text-zinc-500 mt-1';
+
+            if (task.status === 'done') {
                 updateProgress(id, 100);
-                card.classList.remove('border-zinc-800');
                 card.classList.add('border-green-500/40');
-                if (statusEl) statusEl.className = 'text-xs text-green-400';
-                if (statusEl) statusEl.textContent = statusLabels.done;
+                if (statusEl) {
+                    statusEl.className = 'text-xs text-green-400';
+                    statusEl.textContent = statusLabels.done;
+                }
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-circle-check text-green-500"></i>';
                 if (openBtn) {
-                    openBtn.disabled = false;
-                    openBtn.dataset.path = info.path || '';
-                    openBtn.classList.remove('cursor-not-allowed', 'text-zinc-500');
-                    openBtn.classList.add('text-white', 'border-green-500/40');
+                    openBtn.classList.remove('cursor-not-allowed', 'opacity-60');
+                    openBtn.dataset.path = task.path || settingsState.root_folder || '';
                 }
-                if (cancelBtn) {
-                    cancelBtn.disabled = true;
-                    cancelBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                if (playBtn) {
+                    playBtn.disabled = !task.path;
+                    playBtn.classList.toggle('opacity-50', !task.path);
                 }
-            } else if (state === 'error') {
-                card.classList.remove('border-zinc-800');
+            } else if (task.status === 'error') {
                 card.classList.add('border-red-500/40');
                 if (statusEl) {
                     statusEl.className = 'text-xs text-red-400';
-                    statusEl.textContent = info.message || statusLabels.error;
+                    statusEl.textContent = task.error || statusLabels.error;
                 }
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-400"></i>';
-                if (cancelBtn) {
-                    cancelBtn.disabled = true;
-                    cancelBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                }
-            } else if (state === 'cancelled') {
+                if (playBtn) playBtn.disabled = true;
+            } else if (task.status === 'cancelled') {
                 if (statusEl) statusEl.textContent = statusLabels.cancelled;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-ban text-zinc-400"></i>';
-                if (cancelBtn) cancelBtn.disabled = true;
+                if (playBtn) playBtn.disabled = true;
+            } else {
+                if (statusEl) statusEl.textContent = statusLabels[task.status] || statusLabels.idle;
+                if (icon) icon.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i>';
+                if (playBtn) playBtn.disabled = true;
             }
+
+            renderMenu(id);
         }
 
         function handlePyEvent(data) {
             if (!data || !data.task_id) return;
-            if (data.type === 'title') {
+            const task = tasks.get(data.task_id) || { id: data.task_id, title: data.title || data.task_id, url: '', status: 'downloading', path: '', error: '' };
+            tasks.set(task.id, task);
+
+            if (data.type === 'title' && data.title) {
+                task.title = data.title;
                 const el = document.getElementById('title-' + data.task_id);
                 if (el) el.innerText = data.title;
             }
             if (data.type === 'status') {
-                const label = statusLabels[data.status] || data.status;
-                updateStatus(data.task_id, label);
+                task.status = data.status;
             }
             if (data.type === 'progress') {
                 updateProgress(data.task_id, data.progress || 0, data.speed);
-                if (data.status) updateStatus(data.task_id, statusLabels[data.status] || data.status);
+                if (data.status) task.status = data.status;
             }
             if (data.type === 'done') {
-                updateStatus(data.task_id, statusLabels.done);
-                setCardState(data.task_id, 'done', { path: data.path });
+                task.status = 'done';
+                task.path = data.path || task.path;
             }
             if (data.type === 'error') {
-                setCardState(data.task_id, 'error', { message: data.error || statusLabels.error });
+                task.status = 'error';
+                task.error = data.error || '';
             }
-            if (data.type === 'finished') {
-                if (data.cancelled) {
-                    setCardState(data.task_id, 'cancelled');
-                }
+            if (data.type === 'finished' && data.cancelled) {
+                task.status = 'cancelled';
+            }
+
+            createTaskCard(task);
+            setCardState(task);
+            updateQueueCount();
+        }
+
+        function openFolder(id) {
+            const task = tasks.get(id);
+            const path = (document.getElementById('open-' + id)?.dataset.path) || task?.path || settingsState.root_folder;
+            if (path) {
+                pywebview.api.open_folder(path);
             }
         }
 
-        function openResult(id) {
-            const btn = document.getElementById('open-' + id);
-            if (!btn || btn.disabled) return;
-            const targetPath = btn.dataset.path;
-            if (targetPath) {
-                pywebview.api.open_path(targetPath);
+        function playFile(id) {
+            const task = tasks.get(id);
+            if (task?.path) {
+                pywebview.api.open_file(task.path);
             }
         }
 
         function cancelTask(id) {
-            const btn = document.getElementById('cancel-' + id);
-            if (btn) btn.disabled = true;
-            pywebview.api.cancel_download(id).then(res => {
-                if (res.status !== 'ok' && btn) btn.disabled = false;
+            closeAllMenus();
+            pywebview.api.cancel_download(id);
+        }
+
+        function removeTask(id) {
+            const card = document.getElementById('card-' + id);
+            if (card) card.remove();
+            tasks.delete(id);
+            updateQueueCount();
+            pywebview?.api?.remove_task?.(id);
+        }
+
+        function openUrl(url) {
+            if (url) window.open(url, '_blank');
+        }
+
+        function redownloadTask(task) {
+            if (!task?.url) return;
+            document.getElementById('url-input').value = task.url;
+            searchVideo();
+        }
+
+        function renderMenu(id) {
+            const menu = document.getElementById(`menu-${id}`);
+            const task = tasks.get(id);
+            if (!menu || !task) return;
+
+            menu.innerHTML = '';
+            const actions = [];
+            if (['downloading', 'converting'].includes(task.status)) {
+                actions.push({ label: 'Скасувати', handler: () => cancelTask(id) });
+            } else if (task.status === 'done') {
+                actions.push({ label: 'Відкрити посилання', handler: () => openUrl(task.url) });
+                actions.push({ label: 'Скачати знову', handler: () => redownloadTask(task) });
+                actions.push({ label: 'Видалити', handler: () => removeTask(id) });
+            } else if (task.status === 'error') {
+                actions.push({ label: 'Спробувати ще', handler: () => redownloadTask(task) });
+                actions.push({ label: 'Видалити', handler: () => removeTask(id) });
+            } else {
+                actions.push({ label: 'Видалити', handler: () => removeTask(id) });
+            }
+
+            actions.forEach(action => {
+                const btn = document.createElement('button');
+                btn.className = 'w-full text-left px-4 py-3 text-sm text-white hover:bg-[#26262c]';
+                btn.textContent = action.label;
+                btn.onclick = () => {
+                    action.handler();
+                    closeAllMenus();
+                };
+                menu.appendChild(btn);
             });
+        }
+
+        function closeAllMenus() {
+            document.querySelectorAll('[id^="menu-"]').forEach(menu => menu.classList.add('hidden'));
+        }
+
+        function toggleMenu(id) {
+            const menu = document.getElementById(`menu-${id}`);
+            if (!menu) return;
+            renderMenu(id);
+            const isHidden = menu.classList.contains('hidden');
+            closeAllMenus();
+            menu.classList.toggle('hidden', !isHidden);
         }
     </script>
 </body>
