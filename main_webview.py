@@ -317,6 +317,8 @@ def main() -> None:
         height=850,
         min_size=(960, 640),
         js_api=bridge,
+        frameless=True,
+        easy_drag=False,
     )
 
     # 3. Attach created window back to bridge
