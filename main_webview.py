@@ -19,8 +19,14 @@ from typing import Any, Optional
 
 import webview
 
+from yt_downloader.backend import fetch_video_metadata
 from yt_downloader.localization import DEFAULT_LANGUAGE
-from yt_downloader.utils import is_supported_video_url, resolve_asset_path
+from yt_downloader.utils import (
+    format_timestamp,
+    is_supported_video_url,
+    resolve_asset_path,
+)
+from yt_downloader.version import __version__
 from yt_downloader.worker import DownloadWorker
 
 
@@ -37,6 +43,35 @@ class Bridge:
         )
         self._monitor_thread.start()
         self._lock = threading.Lock()
+
+    def get_init_data(self) -> dict[str, str]:
+        """Return static data used to initialize the UI."""
+
+        return {"version": __version__}
+
+    def fetch_metadata(self, url: str) -> dict[str, Any]:
+        """Fetch video metadata for the given URL."""
+
+        if not is_supported_video_url(url):
+            return {"status": "error", "error": "Invalid URL"}
+
+        try:
+            meta = fetch_video_metadata(url)
+            duration_raw = meta.get("duration") or 0
+            try:
+                duration_seconds = int(float(duration_raw))
+            except (TypeError, ValueError):
+                duration_seconds = 0
+
+            return {
+                "status": "ok",
+                "title": meta.get("title"),
+                "duration": duration_seconds,
+                "duration_str": format_timestamp(duration_seconds) if duration_seconds else "00:00",
+                "thumbnail": meta.get("thumbnail"),
+            }
+        except Exception as exc:  # noqa: BLE001 - surfaced to UI
+            return {"status": "error", "error": str(exc)}
 
     def minimize_window(self) -> None:
         """Minimize the application window."""
@@ -76,7 +111,11 @@ class Bridge:
         return str(result)
 
     def start_download(
-        self, url: str, folder: str, options: dict[str, Any] | None = None
+        self,
+        url: str,
+        folder: str,
+        options: dict[str, Any] | None = None,
+        title: str | None = None,
     ) -> dict[str, str]:
         """Validate input and start a new DownloadWorker."""
 
@@ -96,7 +135,7 @@ class Bridge:
             task_id=task_id,
             url=url,
             root=root_folder,
-            title=None,
+            title=title,
             separate_folder=separate_folder,
             convert_to_mp4=convert_to_mp4,
             start_seconds=start_seconds,
