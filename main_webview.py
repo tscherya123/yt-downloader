@@ -40,14 +40,15 @@ from yt_downloader.utils import (
 from yt_downloader.version import __version__
 from yt_downloader.worker import DownloadWorker
 
+CONFIG_DIR = Path.home() / "Documents" / "YT Downloader Settings"
+SETTINGS_FILE = CONFIG_DIR / "settings.json"
+QUEUE_FILE = CONFIG_DIR / "download_queue.json"
+DEFAULT_ROOT = Path.home() / "Videos" / "Downloaded Videos"
+
 
 class Bridge:
     """JavaScript API exposed to the web frontend."""
 
-    CONFIG_DIR = Path.home() / "Documents" / "YT Downloader Settings"
-    SETTINGS_FILE = CONFIG_DIR / "settings.json"
-    QUEUE_FILE = CONFIG_DIR / "download_queue.json"
-    DEFAULT_ROOT = Path.home() / "Videos" / "Downloaded Videos"
     UPDATE_CHECK_TIMEOUT = 15.0
     UPDATE_NETWORK_TIMEOUT = 10.0
 
@@ -64,14 +65,14 @@ class Bridge:
 
         self.settings = self._load_settings()
         self.root_folder = (
-            Path(self.settings.get("root_folder", self.DEFAULT_ROOT)).expanduser().resolve()
+            Path(self.settings.get("root_folder", DEFAULT_ROOT)).expanduser().resolve()
         )
         self._ensure_root_folder(self.root_folder)
         self.queue_items = self._load_queue()
         self.waiting_queue: list[dict[str, Any]] = []
         self.update_status = "checking"
         self.pending_update_info: UpdateInfo | None = None
-        self.update_cache_dir = self.CONFIG_DIR / "updates"
+        self.update_cache_dir = CONFIG_DIR / "updates"
         cleanup_old_versions()
 
     def get_init_data(self) -> dict[str, Any]:
@@ -582,8 +583,8 @@ class Bridge:
     def _load_settings(self) -> dict[str, Any]:
         """Load persisted settings or return defaults if missing."""
 
-        self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        default_root = self.DEFAULT_ROOT
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        default_root = DEFAULT_ROOT
         self._ensure_root_folder(default_root)
         defaults = {
             "root_folder": str(default_root),
@@ -591,13 +592,13 @@ class Bridge:
             "sequential": False,
         }
 
-        if not self.SETTINGS_FILE.exists():
+        if not SETTINGS_FILE.exists():
             self._save_settings_data(defaults)
             return defaults
 
         try:
             loaded: dict[str, Any] = json.loads(
-                self.SETTINGS_FILE.read_text(encoding="utf-8")
+                SETTINGS_FILE.read_text(encoding="utf-8")
             )
         except Exception:
             self._save_settings_data(defaults)
@@ -624,8 +625,8 @@ class Bridge:
 
     def _save_settings_data(self, data: dict[str, Any]) -> None:
         try:
-            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            self.SETTINGS_FILE.write_text(
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            SETTINGS_FILE.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         except Exception:
@@ -640,12 +641,12 @@ class Bridge:
     def _load_queue(self) -> list[dict[str, Any]]:
         """Load persisted queue history."""
 
-        self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        if not self.QUEUE_FILE.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        if not QUEUE_FILE.exists():
             self._save_queue_data([])
             return []
         try:
-            loaded = json.loads(self.QUEUE_FILE.read_text(encoding="utf-8"))
+            loaded = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
         except Exception:
             self._save_queue_data([])
             return []
@@ -680,7 +681,7 @@ class Bridge:
                     "error": error,
                 }
             )
-        if changed or not self.QUEUE_FILE.exists():
+        if changed or not QUEUE_FILE.exists():
             self._save_queue_data(valid_items)
         return valid_items
 
@@ -691,8 +692,8 @@ class Bridge:
 
     def _save_queue_data(self, data: list[dict[str, Any]]) -> None:
         try:
-            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            self.QUEUE_FILE.write_text(
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            QUEUE_FILE.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         except Exception:
