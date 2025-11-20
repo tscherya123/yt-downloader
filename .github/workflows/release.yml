@@ -105,8 +105,6 @@ jobs:
           pyinstaller --onefile --noconsole main_webview.py -n yt-downloader `
             --icon "yt-dw-logo.ico" `
             --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;." --add-data "web;web"
-          pyinstaller --onefile --noconsole yt_downloader/relauncher.py -n yt-downloader-relauncher `
-            --icon "yt-dw-logo.ico"
 
       - name: Package Windows artifact
         env:
@@ -115,7 +113,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path release -Force | Out-Null
           Copy-Item dist\yt-downloader.exe release\yt-downloader.exe -Force
-          Copy-Item dist\yt-downloader-relauncher.exe release\yt-downloader-relauncher.exe -Force
           Copy-Item external-bin\ffmpeg.exe release\ffmpeg.exe -Force
           Copy-Item external-bin\ffprobe.exe release\ffprobe.exe -Force
           Compress-Archive -Path release\* -DestinationPath "release\yt-downloader-$env:VERSION-windows.zip" -Force

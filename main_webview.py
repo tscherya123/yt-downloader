@@ -13,9 +13,7 @@ import queue
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
-import time
 import uuid
 import webbrowser
 from pathlib import Path
@@ -24,12 +22,12 @@ from typing import Any, Optional
 import webview
 
 from yt_downloader.backend import fetch_video_metadata
+from yt_downloader.logger import setup_logging
 from yt_downloader.localization import DEFAULT_LANGUAGE
-from yt_downloader.updater import build_updater_command
+from yt_downloader.updater import cleanup_old_versions, install_update_and_restart
 from yt_downloader.updates import (
     UpdateError,
     UpdateInfo,
-    InstallResult,
     check_for_update,
     download_update_asset,
     install_downloaded_asset,
@@ -74,8 +72,7 @@ class Bridge:
         self.update_status = "checking"
         self.pending_update_info: UpdateInfo | None = None
         self.update_cache_dir = self.CONFIG_DIR / "updates"
-        self.update_log_path = self.CONFIG_DIR / "update.log"
-        self._cleanup_stale_update_artifacts()
+        cleanup_old_versions()
 
     def get_init_data(self) -> dict[str, Any]:
         """Return static data used to initialize the UI."""
@@ -475,59 +472,6 @@ class Bridge:
             {"type": "update_available", "version": info.latest_version}
         )
 
-    def _neutral_cwd(self) -> Path:
-        try:
-            temp_dir = Path(tempfile.gettempdir())
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            return temp_dir
-        except Exception:  # noqa: BLE001 - defensive fallback
-            return Path.home()
-
-    def _cleanup_stale_update_artifacts(self) -> None:
-        candidates: list[Path] = []
-        try:
-            executable = Path(sys.executable).resolve()
-            candidates.append(executable.with_suffix(executable.suffix + ".bak"))
-            relauncher = executable.with_name(
-                f"{executable.stem}-relauncher{executable.suffix}"
-            )
-            candidates.append(relauncher.with_suffix(relauncher.suffix + ".bak"))
-        except Exception:  # noqa: BLE001 - best-effort cleanup
-            executable = None
-        temp_dir = self._neutral_cwd()
-        candidates.extend(temp_dir.glob("yt-downloader-relauncher*.exe"))
-        candidates.extend(self.update_cache_dir.glob("*.bak"))
-        if executable:
-            candidates.append(temp_dir / f"{executable.stem}-relauncher{executable.suffix}")
-
-        for path in candidates:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                continue
-
-    def _copy_relaunch_helper_to_temp(self, helper: Optional[Path]) -> Optional[Path]:
-        if helper is None:
-            return None
-
-        helper_path = helper
-        if not helper_path.exists():
-            return None
-
-        safe_path = self._neutral_cwd() / helper_path.name
-        if safe_path == helper_path:
-            return helper_path
-
-        try:
-            shutil.copy2(helper_path, safe_path)
-            try:
-                safe_path.chmod(0o755)
-            except OSError:
-                pass
-            return safe_path
-        except OSError:
-            return helper_path
-
     def perform_update(self) -> None:
         threading.Thread(target=self._perform_update_worker, daemon=True).start()
 
@@ -566,77 +510,21 @@ class Bridge:
             self._emit_update_event({"type": "update_error", "error": str(exc)})
             return
 
-        command = self._build_update_command(install_result)
-        if not command:
+        executable = install_result.executable
+        if executable is None:
             self._emit_update_event(
-                {
-                    "type": "update_error",
-                    "error": "Unable to prepare updater command",
-                }
+                {"type": "update_error", "error": "Update executable is missing"}
             )
             return
 
         self._emit_update_event(
             {"type": "update_ready", "version": install_result.version, "stage": "install"}
         )
-        time.sleep(1.0)
-        popen_kwargs: dict[str, object] = {
-            "close_fds": True,
-            "cwd": str(self._neutral_cwd()),
-        }
-
-        if os.name == "nt":
-            creation_flags = 0
-            creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
-            creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            creation_flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            creation_flags |= getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
-            if creation_flags:
-                popen_kwargs["creationflags"] = creation_flags
 
         try:
-            subprocess.Popen(command, **popen_kwargs)
-        except Exception:
-            self._emit_update_event(
-                {"type": "update_error", "error": "Failed to launch updater"}
-            )
-            return
-
-        if self.window:
-            try:
-                self.window.destroy()
-            except Exception:
-                pass
-        sys.exit(0)
-
-    def _build_update_command(self, result: InstallResult) -> list[str] | None:
-        executable = result.executable
-        if executable is None:
-            return None
-        current_executable = Path(sys.executable).resolve()
-        if not current_executable.exists():
-            return None
-        relaunch_helper = current_executable.with_name(
-            f"{current_executable.stem}-relauncher{current_executable.suffix}"
-        )
-        if not relaunch_helper.exists():
-            relaunch_helper = None
-        relaunch_helper = self._copy_relaunch_helper_to_temp(relaunch_helper)
-
-        try:
-            return build_updater_command(
-                executable,
-                current_executable,
-                current_executable,
-                sys.argv[1:],
-                self.update_log_path,
-                wait_before=0.5,
-                max_wait=120.0,
-                relaunch_helper=relaunch_helper,
-                relaunch_wait=0.5,
-            )
-        except Exception:
-            return None
+            install_update_and_restart(Path(executable))
+        except Exception as exc:  # noqa: BLE001 - surfaced to UI
+            self._emit_update_event({"type": "update_error", "error": str(exc)})
 
     def _emit_update_event(self, event: dict[str, Any]) -> None:
         if not self.window:
@@ -896,4 +784,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    setup_logging()
     main()

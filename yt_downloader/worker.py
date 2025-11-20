@@ -14,7 +14,11 @@ from typing import Optional
 
 from .backend import BackendError, download_video, fetch_video_metadata
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
+from .logger import get_logger
 from .utils import format_timestamp, resolve_executable, sanitize_filename, unique_path
+
+
+LOGGER = get_logger("Worker")
 
 
 class DownloadCancelled(Exception):
@@ -64,6 +68,7 @@ class DownloadWorker(threading.Thread):
         final_destination: Optional[Path] = None
         cancelled = False
         self._cancelled = False
+        LOGGER.info("Starting task %s for URL %s", self.task_id, self.url)
         try:
             if not self.url:
                 raise ValueError(self._t("error_empty_url"))
@@ -149,6 +154,7 @@ class DownloadWorker(threading.Thread):
                     clip_end=self.end_seconds if clip_requested else None,
                     progress_hooks=[progress_hook],
                 )
+                LOGGER.info("yt-dlp download finished for task %s at %s", self.task_id, src)
             except BackendError as exc:
                 raise RuntimeError(str(exc)) from exc
 
@@ -268,6 +274,9 @@ class DownloadWorker(threading.Thread):
             self._status("done")
             self._emit("done", path=str(final_destination))
             self._log(self._t("log_done_path", path=final_destination))
+            LOGGER.info(
+                "Task %s completed successfully at %s", self.task_id, final_destination
+            )
         except DownloadCancelled:
             cancelled = True
             self._cancelled = True
@@ -279,6 +288,9 @@ class DownloadWorker(threading.Thread):
             self._status("error")
             self._emit("error", error=self.error)
             self._log(self._t("log_error_message", error=self.error))
+            LOGGER.error(
+                "Task %s failed with an unexpected error", self.task_id, exc_info=True
+            )
         finally:
             self._emit("finished", cancelled=cancelled, error=self.error)
             if tempdir is not None:
