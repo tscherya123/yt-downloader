@@ -224,6 +224,7 @@
             converting: 'Конвертація...',
             done: 'Завершено',
             cancelled: 'Скасовано',
+            queued: "В черзі...",
             error: 'Помилка',
             idle: 'Початок...'
         };
@@ -508,7 +509,28 @@
         }
 
         function clearAll() {
-            Array.from(tasks.keys()).forEach(id => removeTask(id));
+            if (!pywebview?.api?.get_queue_stats) {
+                tasks.clear();
+                document.getElementById('download-list').innerHTML = '';
+                updateQueueCount();
+                return;
+            }
+
+            pywebview.api.get_queue_stats().then(stats => {
+                const active = Number(stats?.active) || 0;
+                const message = active > 0
+                    ? `Увага! Зараз завантажується ${active} файлів. Ви впевнені, що хочете скасувати їх та очистити історію?`
+                    : 'Видалити всю історію? Файли залишаться на диску.';
+                if (!confirm(message)) return null;
+                return pywebview.api.perform_clear();
+            }).then(res => {
+                if (res?.status === 'ok') {
+                    tasks.clear();
+                    const list = document.getElementById('download-list');
+                    if (list) list.innerHTML = '';
+                    updateQueueCount();
+                }
+            }).catch(() => {});
         }
 
         function initiateDownload() {
@@ -595,7 +617,7 @@
             const bar = document.getElementById('prog-' + id);
             const label = document.getElementById('percent-' + id);
             const speed = document.getElementById('speed-' + id);
-            const value = Math.min(Math.max(percent || 0, 0), 100);
+            const value = Math.min(Math.max(Number(percent ?? 0) || 0, 0), 100);
             if (bar) bar.style.width = `${value}%`;
             if (label) label.textContent = `${Math.round(value)}%`;
             if (speed && speedText) speed.textContent = speedText;
@@ -630,6 +652,13 @@
             } else if (task.status === 'cancelled') {
                 if (statusEl) statusEl.textContent = statusLabels.cancelled;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-ban text-zinc-400"></i>';
+            } else if (task.status === 'queued') {
+                card.classList.add('border-amber-400/50');
+                if (statusEl) {
+                    statusEl.className = 'text-xs text-amber-300 mt-1';
+                    statusEl.textContent = statusLabels.queued;
+                }
+                if (icon) icon.innerHTML = '<i class="fa-solid fa-clock text-amber-300"></i>';
             } else {
                 if (statusEl) statusEl.textContent = statusLabels[task.status] || statusLabels.idle;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i>';
@@ -878,7 +907,11 @@
             container.innerHTML = '';
             const actions = [];
 
-            if (['downloading', 'converting'].includes(task.status)) {
+            if (task.status === 'queued') {
+                actions.push(createTextButton('fa-solid fa-clock', 'В черзі...', () => {}, { disabled: true, extraClasses: 'text-amber-300 border-amber-400/60' }));
+                actions.push(createIconButton('fa-solid fa-xmark', () => cancelTask(task.id), { title: 'Скасувати', extraClasses: 'text-red-400 hover:text-red-300 hover:border-red-400/60' }));
+                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
+            } else if (['downloading', 'converting'].includes(task.status)) {
                 actions.push(createIconButton('fa-solid fa-xmark', () => cancelTask(task.id), { title: 'Скасувати', extraClasses: 'text-red-400 hover:text-red-300 hover:border-red-400/60' }));
                 actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
             } else if (['error', 'cancelled'].includes(task.status)) {
