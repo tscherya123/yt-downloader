@@ -104,6 +104,11 @@ def download_video(
         "concurrent_fragment_downloads": 8,
         "hls_prefer_ffmpeg": True,
         "noprogress": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios"],
+            }
+        },
     }
     if progress_hooks:
         options["progress_hooks"] = list(progress_hooks)

@@ -73,23 +73,23 @@ class DownloadWorker(threading.Thread):
 
             def progress_hook(d: dict[str, object]) -> None:
                 if d.get("status") == "downloading":
-                    downloaded = d.get("downloaded_bytes")
-                    total = d.get("total_bytes") or d.get("total_bytes_estimate")
-
                     progress_value = 0.0
-                    if (
-                        isinstance(downloaded, (int, float))
-                        and isinstance(total, (int, float))
-                        and total > 0
-                    ):
-                        progress_value = (float(downloaded) / float(total)) * 100
+                    try:
+                        downloaded = float(d.get("downloaded_bytes") or 0)
+                        total = float(d.get("total_bytes") or d.get("total_bytes_estimate") or 0)
+                        if total > 0:
+                            progress_value = (downloaded / total) * 100
+                    except (TypeError, ValueError):
+                        progress_value = 0.0
 
-                    speed_value = d.get("speed")
-                    if isinstance(speed_value, (int, float)):
-                        speed_mib = float(speed_value) / 1024 / 1024
-                        speed_display = f"{speed_mib:.1f} MiB/s"
-                    else:
-                        speed_display = "-"
+                    speed_display = "-"
+                    try:
+                        speed_value = d.get("speed")
+                        if speed_value:
+                            speed_mib = float(speed_value) / 1024 / 1024
+                            speed_display = f"{speed_mib:.1f} MiB/s"
+                    except (TypeError, ValueError):
+                        pass
 
                     self._emit(
                         "progress",
