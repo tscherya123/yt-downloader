@@ -1,4 +1,4 @@
-"""Tkinter application entry point for the YouTube downloader."""
+"""Tkinter application entry point for the video downloader."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ from .updates import (
 from .updater import build_updater_command, maybe_run_updater
 from .utils import (
     format_timestamp as _format_timestamp,
-    is_youtube_video_url as _is_youtube_video_url,
+    is_supported_video_url as _is_supported_video_url,
     parse_time_input as _parse_time_input,
     resolve_asset_path,
 )
@@ -718,7 +718,7 @@ class DownloaderUI(DownloaderApp):
             return
         should_enable = (
             not self.preview_fetch_in_progress
-            and _is_youtube_video_url(self.url_var.get().strip())
+            and _is_supported_video_url(self.url_var.get().strip())
         )
         self._set_button_enabled(self.search_button, should_enable)
 
@@ -731,7 +731,7 @@ class DownloaderUI(DownloaderApp):
             return
         if self.preview_fetch_in_progress:
             return
-        if not _is_youtube_video_url(url):
+        if not _is_supported_video_url(url):
             self._update_search_button_state()
             return
 
@@ -1053,7 +1053,7 @@ class DownloaderUI(DownloaderApp):
             if self.preview_fetch_in_progress:
                 self.after(150, trigger_fetch)
                 return
-            if _is_youtube_video_url(self.url_var.get().strip()):
+            if _is_supported_video_url(self.url_var.get().strip()):
                 self._fetch_preview()
 
         self.after_idle(trigger_fetch)

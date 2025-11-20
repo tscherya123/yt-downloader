@@ -1,4 +1,4 @@
-# YouTube Downloader UI
+# Video Downloader UI
 
 ## Як запустити на Windows
 1. Завантажте останній реліз з розділу **Releases** на GitHub (`yt-downloader-*-windows.zip`).

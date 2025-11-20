@@ -1,4 +1,4 @@
-"""Core package for the YouTube Downloader desktop application."""
+"""Core package for the Video Downloader desktop application."""
 
 from .version import __version__
 

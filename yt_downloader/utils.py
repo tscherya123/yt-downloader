@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 from typing import Optional
 
 
@@ -44,8 +44,8 @@ def shorten_title(title: str, limit: int = 40) -> str:
     return title[:cutoff] + "..."
 
 
-def is_youtube_video_url(value: str) -> bool:
-    """Validate that ``value`` looks like a YouTube video URL."""
+def is_supported_video_url(value: str) -> bool:
+    """Validate that ``value`` looks like a downloadable media URL."""
 
     if not isinstance(value, str):
         return False
@@ -58,22 +58,9 @@ def is_youtube_video_url(value: str) -> bool:
         return False
     if parsed.scheme.lower() not in {"http", "https"}:
         return False
-    host = parsed.netloc.lower()
-    path = parsed.path or ""
-    if host.endswith("youtube.com"):
-        if path.startswith("/watch"):
-            query = parse_qs(parsed.query)
-            return any(part for part in query.get("v", []) if part.strip())
-        if path.startswith("/shorts/"):
-            return bool(path.split("/shorts/", 1)[-1].strip("/"))
-        if path.startswith("/live/"):
-            return bool(path.split("/live/", 1)[-1].strip("/"))
-        if path.startswith("/embed/"):
-            return bool(path.split("/embed/", 1)[-1].strip("/"))
+    if not parsed.netloc:
         return False
-    if host == "youtu.be" or host.endswith(".youtu.be"):
-        return bool(path.strip("/"))
-    return False
+    return True
 
 
 def parse_time_input(text: str) -> Optional[float]:

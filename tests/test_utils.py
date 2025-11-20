@@ -43,15 +43,13 @@ def test_shorten_title_returns_within_limit_unchanged():
     "url",
     [
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-        "http://youtube.com/watch?v=dQw4w9WgXcQ",
-        "https://youtube.com/shorts/abc123",
-        "https://www.youtube.com/live/eventid",
-        "https://www.youtube.com/embed/abc123",
-        "https://youtu.be/abc123",
+        "https://vimeo.com/123456",
+        "https://example.com/videos/clip",
+        "https://sub.domain.example/path?query=1",
     ],
 )
-def test_is_youtube_video_url_recognizes_valid_urls(url):
-    assert utils.is_youtube_video_url(url)
+def test_is_supported_video_url_recognizes_valid_urls(url):
+    assert utils.is_supported_video_url(url)
 
 
 @pytest.mark.parametrize(
@@ -60,14 +58,12 @@ def test_is_youtube_video_url_recognizes_valid_urls(url):
         "",
         "not a url",
         "ftp://youtube.com/watch?v=dQw4w9WgXcQ",
-        "https://www.youtube.com/watch",
-        "https://www.youtube.com/watch?v= ",
-        "https://example.com/watch?v=dQw4w9WgXcQ",
-        "https://www.youtube.com/playlist?list=123",
+        "mailto:user@example.com",
+        "//example.com/path",
     ],
 )
-def test_is_youtube_video_url_rejects_invalid_urls(url):
-    assert not utils.is_youtube_video_url(url)
+def test_is_supported_video_url_rejects_invalid_urls(url):
+    assert not utils.is_supported_video_url(url)
 
 
 @pytest.mark.parametrize(
