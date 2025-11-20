@@ -18,30 +18,41 @@ class ThemeDefinition:
     colors: Dict[str, str]
 
 
-DEFAULT_THEME = "modern"
+DEFAULT_THEME = "light"
 
 
 _PALETTES: Dict[str, Dict[str, str]] = {
-    "modern": {
-        "background": "#09090b",
-        "surface": "#18181b",
-        "panel": "#202023",
-        "input": "#27272a",
-        "text": "#e4e4e7",
-        "muted": "#a1a1aa",
-        "accent": "#6366f1",
-        "accent_hover": "#4f46e5",
-        "disabled": "#3f3f46",
-        "button_disabled": "#27272a",
-        "button_disabled_text": "#a1a1aa",
-        "button_text": "#ffffff",
-        "entry": "#27272a",
-        "canvas": "#09090b",
-        "log_bg": "#18181b",
-        "log_fg": "#e4e4e7",
-        "highlight": "#3f3f46",
-        "success": "#22c55e",
-        "error": "#ef4444",
+    "light": {
+        "background": "#f4f4f8",
+        "surface": "#ffffff",
+        "text": "#202124",
+        "muted": "#5f6368",
+        "accent": "#2563eb",
+        "accent_hover": "#1d4ed8",
+        "disabled": "#a0a4a8",
+        "button_disabled": "#d1d5db",
+        "button_disabled_text": "#6b7280",
+        "entry": "#ffffff",
+        "canvas": "#ffffff",
+        "log_bg": "#ffffff",
+        "log_fg": "#202124",
+        "highlight": "#e6e6eb",
+    },
+    "dark": {
+        "background": "#121212",
+        "surface": "#1f1f1f",
+        "text": "#f5f5f5",
+        "muted": "#b0b0b0",
+        "accent": "#2563eb",
+        "accent_hover": "#1d4ed8",
+        "disabled": "#6f6f6f",
+        "button_disabled": "#2f2f33",
+        "button_disabled_text": "#9ca3af",
+        "entry": "#2a2a2a",
+        "canvas": "#1f1f1f",
+        "log_bg": "#161616",
+        "log_fg": "#f5f5f5",
+        "highlight": "#2c2c2c",
     },
 }
 

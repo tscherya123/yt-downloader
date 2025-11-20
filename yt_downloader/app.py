@@ -155,10 +155,9 @@ class DownloaderUI(DownloaderApp):
         self.geometry("1200x760")
         self.minsize(1040, 700)
 
-        self.base_font = ctk.CTkFont(family="Segoe UI", size=12)
-        self.small_font = ctk.CTkFont(family="Segoe UI", size=11)
-        self.bold_font = ctk.CTkFont(family="Segoe UI", size=12, weight="bold")
-        self.queue_count_var = ctk.StringVar(value="0")
+        self.base_font = ctk.CTkFont(family="Segoe UI", size=11)
+        self.small_font = ctk.CTkFont(family="Segoe UI", size=10)
+        self.bold_font = ctk.CTkFont(family="Segoe UI", size=11, weight="bold")
 
         default_root = str((Path.home() / "Downloads").resolve())
         saved_root = self.settings.get("root_folder")
@@ -204,149 +203,96 @@ class DownloaderUI(DownloaderApp):
         if self._main_interface_initialized:
             return
 
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        self.root_container = container
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
-
-        container = ctk.CTkFrame(self, corner_radius=20)
-        container.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
-        container.grid_columnconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=3)
+        container.grid_columnconfigure(1, weight=2)
+        container.grid_rowconfigure(0, weight=0)
         container.grid_rowconfigure(1, weight=1)
-        self.root_container = container
 
-        header_frame = ctk.CTkFrame(container, corner_radius=16, border_width=1)
-        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 16))
-        header_frame.grid_columnconfigure(1, weight=1)
-        self.header_frame = header_frame
+        options_frame = ctk.CTkFrame(container, fg_color="transparent")
+        options_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        options_frame.grid_columnconfigure(1, weight=1)
+        options_frame.grid_columnconfigure(3, weight=1)
+        self.options_frame = options_frame
 
-        brand_frame = ctk.CTkFrame(header_frame, width=56, height=56, corner_radius=14)
-        brand_frame.grid(row=0, column=0, padx=14, pady=12)
-        brand_frame.grid_propagate(False)
-        self.brand_frame = brand_frame
-        self.brand_icon = ctk.CTkLabel(brand_frame, text="⬇", font=self.bold_font)
-        self.brand_icon.place(relx=0.5, rely=0.5, anchor="center")
-
-        title_stack = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_stack.grid(row=0, column=1, sticky="w", pady=12)
-        title_stack.grid_columnconfigure(0, weight=1)
-        self.header_title = ctk.CTkLabel(
-            title_stack, anchor="w", font=self.bold_font, text=self._("app_title")
-        )
-        self.header_title.grid(row=0, column=0, sticky="w")
-        self.version_badge = ctk.CTkLabel(
-            title_stack,
-            anchor="w",
-            font=self.small_font,
-            text=f"v{self.app_version}",
-            corner_radius=10,
-            padx=10,
-            pady=4,
-        )
-        self.version_badge.grid(row=0, column=1, sticky="w", padx=(10, 0))
-
-        control_row = ctk.CTkFrame(header_frame, fg_color="transparent")
-        control_row.grid(row=0, column=2, sticky="e", padx=14)
-        control_row.grid_columnconfigure(1, weight=1)
-        control_row.grid_columnconfigure(3, weight=1)
-        self.language_label = ctk.CTkLabel(control_row, anchor="e", font=self.base_font)
+        self.language_label = ctk.CTkLabel(options_frame, anchor="e", font=self.base_font)
         self.language_label.grid(row=0, column=0, sticky="e", padx=(0, 6))
         self.language_display_var = ctk.StringVar()
         self.language_combo = ctk.CTkComboBox(
-            control_row,
+            options_frame,
             state="readonly",
             values=[],
             variable=self.language_display_var,
             command=self._on_language_selected,
-            width=160,
+            width=180,
         )
-        self.language_combo.grid(row=0, column=1, sticky="e", padx=(0, 12))
+        self.language_combo.grid(row=0, column=1, sticky="w")
 
-        self.theme_label = ctk.CTkLabel(control_row, anchor="e", font=self.base_font)
-        self.theme_label.grid(row=0, column=2, sticky="e", padx=(12, 6))
+        self.theme_label = ctk.CTkLabel(options_frame, anchor="e", font=self.base_font)
+        self.theme_label.grid(row=0, column=2, sticky="e", padx=(18, 6))
         self.theme_display_var = ctk.StringVar()
         self.theme_combo = ctk.CTkComboBox(
-            control_row,
+            options_frame,
             state="readonly",
             values=[],
             variable=self.theme_display_var,
             command=self._on_theme_selected,
-            width=160,
+            width=180,
         )
-        self.theme_combo.grid(row=0, column=3, sticky="e")
+        self.theme_combo.grid(row=0, column=3, sticky="w")
 
-        content_frame = ctk.CTkFrame(container, fg_color="transparent")
-        content_frame.grid(row=1, column=0, sticky="nsew")
-        content_frame.grid_columnconfigure(0, weight=4)
-        content_frame.grid_columnconfigure(1, weight=6)
-        content_frame.grid_rowconfigure(0, weight=1)
-        self.content_frame = content_frame
-
-        left_frame = ctk.CTkFrame(content_frame, corner_radius=18, border_width=1)
-        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        left_frame.grid_columnconfigure(0, weight=1)
-        left_frame.grid_rowconfigure(1, weight=1)
+        left_frame = ctk.CTkFrame(container)
+        left_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+        left_frame.grid_columnconfigure(1, weight=1)
+        left_frame.grid_columnconfigure(3, weight=0)
+        left_frame.grid_rowconfigure(4, weight=1)
         self.left_frame = left_frame
 
-        right_column = ctk.CTkFrame(content_frame, corner_radius=18, border_width=1)
-        right_column.grid(row=0, column=1, sticky="nsew", padx=(14, 0))
-        right_column.grid_columnconfigure(0, weight=1)
-        right_column.grid_rowconfigure(0, weight=3)
-        right_column.grid_rowconfigure(1, weight=1)
-        self.right_column = right_column
-
-        inputs_card = ctk.CTkFrame(left_frame, corner_radius=14, border_width=1)
-        inputs_card.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 10))
-        inputs_card.grid_columnconfigure(0, weight=1)
-        inputs_card.grid_columnconfigure(1, weight=0)
-        self.inputs_card = inputs_card
-
-        self.url_label = ctk.CTkLabel(
-            inputs_card, text=self._("url_label"), font=self.base_font, anchor="w"
-        )
-        self.url_label.grid(row=0, column=0, sticky="w", pady=(2, 4))
+        self.url_label = ctk.CTkLabel(left_frame, text=self._("url_label"), font=self.base_font)
+        self.url_label.grid(row=0, column=0, sticky="w")
         self.url_var = ctk.StringVar()
-        self.url_entry = ctk.CTkEntry(inputs_card, textvariable=self.url_var, font=self.base_font)
-        self.url_entry.grid(row=1, column=0, sticky="ew", padx=(0, 10), pady=(0, 2))
+        self.url_entry = ctk.CTkEntry(left_frame, textvariable=self.url_var, font=self.base_font)
+        self.url_entry.grid(row=0, column=1, sticky="ew", padx=(8, 0))
         self.url_var.trace_add("write", self._on_url_change)
         self.search_button = ctk.CTkButton(
-            inputs_card, text=self._("search_button"), command=self._fetch_preview, width=150
+            left_frame, text=self._("search_button"), command=self._fetch_preview
         )
-        self.search_button.grid(row=1, column=1, sticky="e")
+        self.search_button.grid(row=0, column=2, sticky="e")
         self._update_search_button_state()
 
-        self.root_label = ctk.CTkLabel(
-            inputs_card, text=self._("root_label"), font=self.base_font, anchor="w"
-        )
-        self.root_label.grid(row=2, column=0, sticky="w", pady=(12, 4))
+        self.root_label = ctk.CTkLabel(left_frame, text=self._("root_label"), font=self.base_font)
+        self.root_label.grid(row=1, column=0, sticky="w", pady=(12, 0))
         self.root_var = ctk.StringVar(value=self.initial_root)
-        self.root_entry = ctk.CTkEntry(inputs_card, textvariable=self.root_var, font=self.base_font)
-        self.root_entry.grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(0, 2))
+        self.root_entry = ctk.CTkEntry(left_frame, textvariable=self.root_var, font=self.base_font)
+        self.root_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(12, 0))
         self.browse_button = ctk.CTkButton(
-            inputs_card, text=self._("choose_button"), command=self._browse_root, width=150
+            left_frame, text=self._("choose_button"), command=self._browse_root
         )
-        self.browse_button.grid(row=3, column=1, sticky="e")
-
-        toggles_frame = ctk.CTkFrame(inputs_card, corner_radius=12, border_width=1)
-        toggles_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(16, 10))
-        toggles_frame.grid_columnconfigure(0, weight=1)
-        toggles_frame.grid_columnconfigure(1, weight=1)
-        self.toggles_frame = toggles_frame
+        self.browse_button.grid(row=1, column=2, sticky="e", pady=(12, 0))
 
         self.separate_var = ctk.BooleanVar(value=False)
         self.separate_check = ctk.CTkCheckBox(
-            toggles_frame,
+            left_frame,
             text=self._("separate_folder"),
             variable=self.separate_var,
             onvalue=True,
             offvalue=False,
             font=self.base_font,
         )
-        self.separate_check.grid(row=0, column=0, sticky="w", padx=12, pady=8)
+        self.separate_check.grid(row=2, column=0, sticky="w", pady=(12, 0))
 
-        download_options_frame = ctk.CTkFrame(toggles_frame, fg_color="transparent")
-        download_options_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 8))
-        download_options_frame.grid_columnconfigure(0, weight=1)
-        download_options_frame.grid_columnconfigure(1, weight=1)
+        download_options_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+        download_options_frame.grid(
+            row=2, column=1, columnspan=2, sticky="w", padx=(12, 0), pady=(12, 0)
+        )
+        download_options_frame.grid_columnconfigure(0, weight=0)
+        download_options_frame.grid_columnconfigure(1, weight=0)
         self.download_options_frame = download_options_frame
+
         self.convert_check = ctk.CTkCheckBox(
             download_options_frame,
             text=self._("convert_to_mp4"),
@@ -355,7 +301,7 @@ class DownloaderUI(DownloaderApp):
             offvalue=False,
             font=self.base_font,
         )
-        self.convert_check.grid(row=0, column=0, sticky="w", padx=(0, 12))
+        self.convert_check.grid(row=0, column=0, sticky="w")
         self.sequential_check = ctk.CTkCheckBox(
             download_options_frame,
             text=self._("sequential_downloads"),
@@ -364,20 +310,18 @@ class DownloaderUI(DownloaderApp):
             offvalue=False,
             font=self.base_font,
         )
-        self.sequential_check.grid(row=0, column=1, sticky="w")
-
+        self.sequential_check.grid(row=0, column=1, sticky="w", padx=(12, 0))
         self.download_button = ctk.CTkButton(
-            inputs_card,
+            left_frame,
             text=self._("download_button"),
             command=self._start_worker,
             state="disabled",
-            height=44,
         )
-        self.download_button.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        self.download_button.grid(row=2, column=3, sticky="e", pady=(12, 0))
 
-        self.preview_frame = ctk.CTkFrame(left_frame, corner_radius=14, border_width=1)
+        self.preview_frame = ctk.CTkFrame(left_frame, corner_radius=8)
         preview_frame = self.preview_frame
-        preview_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(4, 10))
+        preview_frame.grid(row=3, column=0, columnspan=3, sticky="nsew", pady=(18, 12))
         preview_frame.columnconfigure(0, weight=1)
 
         self.preview_frame_label = ctk.CTkLabel(
@@ -394,7 +338,7 @@ class DownloaderUI(DownloaderApp):
             textvariable=self.preview_title_var,
             justify="left",
             anchor="w",
-            wraplength=520,
+            wraplength=560,
             font=self.base_font,
         )
         self.preview_title_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
@@ -409,13 +353,8 @@ class DownloaderUI(DownloaderApp):
         )
         self.preview_duration_label.grid(row=2, column=0, sticky="w", padx=12)
 
-        thumbnail_card = ctk.CTkFrame(preview_frame, corner_radius=12, border_width=1)
-        thumbnail_card.grid(row=3, column=0, padx=12, pady=10, sticky="nsew")
-        thumbnail_card.grid_columnconfigure(0, weight=1)
-        thumbnail_card.grid_rowconfigure(0, weight=1)
-        self.thumbnail_card = thumbnail_card
-        self.preview_image_label = ctk.CTkLabel(thumbnail_card, text="")
-        self.preview_image_label.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.preview_image_label = ctk.CTkLabel(preview_frame, text="")
+        self.preview_image_label.grid(row=3, column=0, padx=12, pady=6, sticky="nsew")
         self.preview_image_text_key = None
         if not PIL_AVAILABLE:
             self.preview_image_text_key = "preview_thumbnail_pillow_required"
@@ -457,14 +396,9 @@ class DownloaderUI(DownloaderApp):
         )
         self.preview_status_label.grid(row=5, column=0, sticky="w", padx=12, pady=(0, 12))
 
-        self.queue_shell = ctk.CTkFrame(right_column, corner_radius=16, border_width=1)
-        self.queue_shell.grid(row=0, column=0, sticky="nsew")
-        self.queue_shell.grid_columnconfigure(0, weight=1)
-        self.queue_shell.grid_rowconfigure(0, weight=1)
-
-        self.queue_frame = ctk.CTkFrame(self.queue_shell, corner_radius=12, border_width=1)
+        self.queue_frame = ctk.CTkFrame(container, corner_radius=8)
         queue_frame = self.queue_frame
-        queue_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        queue_frame.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
         queue_frame.columnconfigure(0, weight=1)
         queue_frame.rowconfigure(3, weight=1)
 
@@ -477,25 +411,11 @@ class DownloaderUI(DownloaderApp):
         header_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 6))
         header_frame.columnconfigure(0, weight=1)
         self.queue_header_frame = header_frame
-
-        queue_meta = ctk.CTkFrame(header_frame, fg_color="transparent")
-        queue_meta.grid(row=0, column=0, sticky="w")
-        self.queue_count_badge = ctk.CTkLabel(
-            queue_meta,
-            textvariable=self.queue_count_var,
-            font=self.small_font,
-            corner_radius=10,
-            padx=10,
-            pady=4,
-        )
-        self.queue_count_badge.grid(row=0, column=0, sticky="w")
-
         self.clear_history_button = ctk.CTkButton(
             header_frame,
             text=self._("clear_history"),
             command=self._confirm_clear_history,
             state="disabled",
-            width=140,
         )
         self.clear_history_button.grid(row=0, column=1, sticky="e")
 
@@ -527,18 +447,10 @@ class DownloaderUI(DownloaderApp):
         self.queue_status_header.grid(row=0, column=1, sticky="w")
         self.queue_actions_header.grid(row=0, column=2, sticky="e")
 
-        tasks_container = ctk.CTkFrame(queue_frame, fg_color="transparent")
-        tasks_container.grid(
-            row=3, column=0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12)
-        )
-        tasks_container.grid_columnconfigure(0, weight=1)
-        tasks_container.grid_rowconfigure(0, weight=1)
-        self.tasks_container = tasks_container
-
-        self.tasks_canvas = tk.Canvas(tasks_container, highlightthickness=0)
-        self.tasks_canvas.grid(row=0, column=0, sticky="nsew")
-        self.tasks_scroll = ctk.CTkScrollbar(tasks_container, orientation="vertical")
-        self.tasks_scroll.grid(row=0, column=1, sticky="ns", padx=(6, 0))
+        self.tasks_canvas = tk.Canvas(queue_frame, highlightthickness=0)
+        self.tasks_canvas.grid(row=3, column=0, sticky="nsew")
+        self.tasks_scroll = ctk.CTkScrollbar(queue_frame, orientation="vertical")
+        self.tasks_scroll.grid(row=3, column=1, sticky="ns")
         self.tasks_canvas.configure(yscrollcommand=self.tasks_scroll.set)
         self.tasks_scroll.configure(command=self.tasks_canvas.yview)
         self.tasks_inner = ctk.CTkFrame(self.tasks_canvas, fg_color="transparent")
@@ -561,9 +473,9 @@ class DownloaderUI(DownloaderApp):
 
         self._restore_queue_from_history()
 
-        self.log_frame = ctk.CTkFrame(right_column, corner_radius=14, border_width=1)
+        self.log_frame = ctk.CTkFrame(left_frame, corner_radius=8)
         log_frame = self.log_frame
-        log_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(6, 12))
+        log_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=(6, 0))
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(1, weight=1)
 
@@ -586,6 +498,7 @@ class DownloaderUI(DownloaderApp):
         self._apply_language()
         self._apply_theme()
         self._update_clear_history_state()
+
     def _determine_update_log_path(self) -> Path:
         if getattr(sys, "frozen", False):
             base_dir = Path(sys.executable).resolve().parent
@@ -1181,11 +1094,6 @@ class DownloaderUI(DownloaderApp):
             self.tasks_canvas.configure(scrollregion=bbox)
         else:
             self.tasks_canvas.configure(scrollregion=(0, 0, 0, 0))
-        self._refresh_queue_badge()
-
-    def _refresh_queue_badge(self) -> None:
-        if hasattr(self, "queue_count_var"):
-            self.queue_count_var.set(str(len(self.tasks)))
 
     def _restore_queue_from_history(self) -> None:
         for record in self.queue_state.get("items", []):
@@ -1393,8 +1301,6 @@ class DownloaderUI(DownloaderApp):
         self.theme_combo.set(current_theme_name)
 
         self._set_window_title()
-        if getattr(self, "header_title", None) is not None:
-            self.header_title.configure(text=self._("app_title"))
         self.language_label.configure(text=self._("language_label"))
         self.theme_label.configure(text=self._("theme_label"))
         self.url_label.configure(text=self._("url_label"))
@@ -1500,39 +1406,24 @@ class DownloaderUI(DownloaderApp):
         log_bg = colors.get("log_bg", surface)
         log_fg = colors.get("log_fg", text)
         highlight = colors.get("highlight", surface)
-        button_text = colors.get("button_text") or "#ffffff"
 
         if background:
-            self.configure(fg_color=background, bg_color=background)
-        frame_color = surface or background
+            self.configure(fg_color=background)
         for frame_name in (
             "root_container",
-            "header_frame",
-            "content_frame",
+            "options_frame",
             "left_frame",
-            "right_column",
-            "inputs_card",
-            "thumbnail_card",
-            "toggles_frame",
-            "download_options_frame",
             "preview_frame",
             "clip_frame",
-            "queue_shell",
             "queue_frame",
             "queue_header_frame",
             "queue_columns_frame",
-            "tasks_container",
+            "tasks_inner",
             "log_frame",
         ):
             frame = getattr(self, frame_name, None)
-            if frame is not None and frame_color is not None:
-                frame.configure(
-                    fg_color=frame_color, bg_color=background, border_color=highlight
-                )
-        if highlight and getattr(self, "toggles_frame", None) is not None:
-            self.toggles_frame.configure(fg_color=highlight, bg_color=background)
-        if getattr(self, "brand_frame", None) is not None:
-            self.brand_frame.configure(fg_color=accent, bg_color=background)
+            if frame is not None and surface is not None:
+                frame.configure(fg_color=surface)
 
         label_targets = (
             "language_label",
@@ -1551,14 +1442,6 @@ class DownloaderUI(DownloaderApp):
             label = getattr(self, label_name, None)
             if label is not None:
                 label.configure(text_color=text)
-        if getattr(self, "header_title", None) is not None:
-            self.header_title.configure(text_color=text)
-        if getattr(self, "version_badge", None) is not None:
-            self.version_badge.configure(fg_color=highlight, text_color=accent or text)
-        if getattr(self, "queue_count_badge", None) is not None:
-            self.queue_count_badge.configure(fg_color=accent, text_color=button_text)
-        if getattr(self, "brand_icon", None) is not None:
-            self.brand_icon.configure(text_color=button_text)
         self.preview_status_label.configure(text_color=muted)
         self.queue_status_header.configure(text_color=muted)
 
@@ -1568,6 +1451,7 @@ class DownloaderUI(DownloaderApp):
             self.download_button,
             self.clear_history_button,
         )
+        button_text = surface if accent else text
         disabled_text = colors.get("button_disabled_text", disabled or button_text)
         disabled_bg = colors.get("button_disabled", disabled or accent)
         for button in button_targets:
@@ -1619,17 +1503,7 @@ class DownloaderUI(DownloaderApp):
             self.preview_image_label.configure(text_color=muted, fg_color=surface)
             self.queue_columns_frame.configure(fg_color=surface)
 
-        canvas_bg = canvas_color or surface
-        self.tasks_canvas.configure(
-            background=canvas_bg,
-            bg=canvas_bg,
-            highlightbackground=canvas_bg,
-            highlightcolor=canvas_bg,
-            highlightthickness=0,
-            bd=0,
-        )
-        if self.tasks_inner is not None and canvas_bg is not None:
-            self.tasks_inner.configure(fg_color=canvas_bg, bg_color=canvas_bg)
+        self.tasks_canvas.configure(background=canvas_color or surface, highlightthickness=0)
         self.tasks_scroll.configure(
             fg_color=surface,
             button_color=accent,
