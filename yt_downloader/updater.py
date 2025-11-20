@@ -152,6 +152,15 @@ def run_updater(
             _LOGGER.info("Replacement not yet possible (attempt %s): %s", attempt, exc)
             time.sleep(1.0)
 
+    try:
+        _LOGGER.info("Cleaning up update files...")
+        source_dir = Path(source).parent
+        if source_dir.exists() and "updates" in str(source_dir):
+            shutil.rmtree(source_dir, ignore_errors=True)
+            _LOGGER.info("Removed update directory: %s", source_dir)
+    except Exception as exc:  # pylint: disable=broad-except
+        _LOGGER.warning("Failed to cleanup update files: %s", exc)
+
     if launch_path:
         args = [str(launch_path)]
         if launch_args:

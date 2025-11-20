@@ -45,7 +45,7 @@
         /* STATES */
         .border-active { border-color: #eab308 !important; animation: pulse-border 2s infinite; }
         .border-queued { border-color: #f97316 !important; }
-        .card-cancelled { opacity: 0.6; filter: grayscale(100%); pointer-events: none; }
+        .card-cancelled { opacity: 0.6; filter: grayscale(100%); }
 
         @keyframes pulse-border {
             0% { border-color: #a16207; }
@@ -123,7 +123,7 @@
                 </div>
                 <div id="preview-loaded" class="hidden">
                     <div class="h-40 bg-[#0f0f11] relative flex items-center justify-center">
-                        <img id="preview-thumb" alt="Прев'ю" class="w-full h-full object-cover">
+                        <img id="preview-thumb" alt="Прев'ю" class="w-full h-full object-contain bg-black">
                         <span id="preview-duration" class="absolute bottom-3 right-4 text-xs bg-[#0b0b0d] border border-zinc-700 text-white px-2 py-1 rounded-md">--:--</span>
                     </div>
                     <div class="p-4 space-y-3">
@@ -952,7 +952,10 @@
                 actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
                 actions.push(createIconButton('fa-solid fa-trash-can', () => removeTask(task.id), { title: 'Видалити', extraClasses: 'hover:text-red-400 hover:border-red-400/60' }));
             } else if (task.status === 'done') {
-                actions.push(createTextButton('fa-regular fa-folder-open', 'Папка', () => openFolder(task.id), { disabled: !task.path }));
+                actions.push(createTextButton('fa-regular fa-folder-open', 'Папка', () => openFolder(task.id), {
+                    disabled: !task.path,
+                    extraClasses: 'hover:border-zinc-500 transition-colors'
+                }));
                 actions.push(createIconButton('fa-solid fa-play', () => playFile(task.id), { disabled: !task.path, title: 'Відтворити' }));
                 actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
                 actions.push(createIconButton('fa-solid fa-rotate-right', () => retryTask(task.id), { title: 'Спробувати ще' }));
