@@ -79,13 +79,6 @@
 
             <div class="bg-[#202023] border border-zinc-800 rounded-2xl p-4 space-y-4">
                 <div class="flex items-center justify-between">
-                    <span class="text-sm text-zinc-200">Створити окрему папку</span>
-                    <label class="toggle">
-                        <input type="checkbox" id="chk-folder">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="flex items-center justify-between">
                     <span class="text-sm text-zinc-200">Конвертувати в MP4</span>
                     <label class="toggle">
                         <input type="checkbox" id="chk-mp4" checked>
@@ -197,7 +190,14 @@
             if (pywebview?.api?.get_init_data) {
                 pywebview.api.get_init_data().then(data => {
                     const versionEl = document.getElementById('app-version');
+                    const pathInput = document.getElementById('path-input');
+                    const mp4Toggle = document.getElementById('chk-mp4');
+                    const queueToggle = document.getElementById('chk-queue');
+
                     if (versionEl) versionEl.textContent = data?.version || '—';
+                    if (pathInput && data?.root_folder) pathInput.value = data.root_folder;
+                    if (mp4Toggle) mp4Toggle.checked = Boolean(data?.convert_mp4 ?? true);
+                    if (queueToggle) queueToggle.checked = Boolean(data?.sequential ?? false);
                 }).catch(() => {
                     const versionEl = document.getElementById('app-version');
                     if (versionEl) versionEl.textContent = '—';
@@ -299,13 +299,12 @@
             const url = document.getElementById('url-input').value.trim();
             const path = document.getElementById('path-input').value.trim();
             const mp4 = document.getElementById('chk-mp4').checked;
-            const separateFolder = document.getElementById('chk-folder').checked;
 
             if (!url) return alert('Будь ласка, введіть посилання');
 
             const titleHint = (currentMetadata && currentMetadata.title) || document.getElementById('preview-title').textContent.trim();
 
-            pywebview.api.start_download(url, path, { mp4: mp4, separate_folder: separateFolder }, titleHint).then(res => {
+            pywebview.api.start_download(url, path, { mp4: mp4 }, titleHint).then(res => {
                 if (res.status === 'ok') {
                     const label = titleHint || url;
                     createTaskCard(res.task_id, label);
