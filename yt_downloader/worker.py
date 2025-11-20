@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import threading
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -74,22 +73,28 @@ class DownloadWorker(threading.Thread):
 
             def progress_hook(d: dict[str, object]) -> None:
                 if d.get("status") == "downloading":
-                    percent_raw = str(d.get("_percent_str", "0%"))
-                    percent_clean = re.sub(r"\x1b\[[0-9;]*m", "", percent_raw)
-                    percent_clean = percent_clean.replace("%", "").strip()
+                    downloaded = d.get("downloaded_bytes")
+                    total = d.get("total_bytes") or d.get("total_bytes_estimate")
 
-                    speed_raw = str(d.get("_speed_str", "")).strip()
-                    speed_clean = re.sub(r"\x1b\[[0-9;]*m", "", speed_raw)
+                    progress_value = 0.0
+                    if (
+                        isinstance(downloaded, (int, float))
+                        and isinstance(total, (int, float))
+                        and total > 0
+                    ):
+                        progress_value = (float(downloaded) / float(total)) * 100
 
-                    try:
-                        progress_value = float(percent_clean or 0.0)
-                    except (TypeError, ValueError):
-                        progress_value = 0.0
+                    speed_value = d.get("speed")
+                    if isinstance(speed_value, (int, float)):
+                        speed_mib = float(speed_value) / 1024 / 1024
+                        speed_display = f"{speed_mib:.1f} MiB/s"
+                    else:
+                        speed_display = "-"
 
                     self._emit(
                         "progress",
                         progress=progress_value,
-                        speed=speed_clean,
+                        speed=speed_display,
                         status="downloading",
                     )
                 elif d.get("status") == "finished":
