@@ -111,14 +111,14 @@ def download_video(
             "temp": str(tempdir),
         },
         "outtmpl": "source.%(ext)s",
-        "format": "bestvideo*+bestaudio/best",  # More permissive format selection
-        "format_sort": ["res:1080", "fps", "br"],
+        "format": "bestvideo*+bestaudio/best",
+        "format_sort": ["res:2160", "res:1440", "res:1080", "fps", "br"],
         "concurrent_fragment_downloads": 8,
         "hls_prefer_ffmpeg": True,
         "noprogress": True,
         "extractor_args": {
             "youtube": {
-                # Force the web client to expose 1080p+/4K formats.
+                # 'web' client supports 4K and works with QuickJS
                 "player_client": ["web"],
             }
         },

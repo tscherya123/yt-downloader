@@ -106,6 +106,16 @@ jobs:
             --icon "yt-dw-logo.ico" `
             --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;." --add-data "web;web"
 
+      - name: Download QuickJS
+        shell: pwsh
+        run: |
+          # Create external-bin directory if it doesn't exist
+          New-Item -ItemType Directory -Path 'external-bin' -Force | Out-Null
+
+          # Download qjs.exe directly (no unzip needed)
+          $url = "https://github.com/quickjs-ng/quickjs/releases/download/v0.11.0/qjs-windows-x86_64.exe"
+          Invoke-WebRequest -Uri $url -OutFile "external-bin\qjs.exe"
+
       - name: Package Windows artifact
         env:
           VERSION: ${{ steps.bump_version.outputs.version }}
@@ -115,6 +125,8 @@ jobs:
           Copy-Item dist\yt-downloader.exe release\yt-downloader.exe -Force
           Copy-Item external-bin\ffmpeg.exe release\ffmpeg.exe -Force
           Copy-Item external-bin\ffprobe.exe release\ffprobe.exe -Force
+          # Add this line to copy qjs.exe to the release folder
+          Copy-Item external-bin\qjs.exe release\qjs.exe -Force
           Compress-Archive -Path release\* -DestinationPath "release\yt-downloader-$env:VERSION-windows.zip" -Force
 
       - name: Commit version bump
