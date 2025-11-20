@@ -15,7 +15,7 @@ import sys
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import webview
 
@@ -27,7 +27,7 @@ from yt_downloader.worker import DownloadWorker
 class Bridge:
     """JavaScript API exposed to the web frontend."""
 
-    def __init__(self, window: "webview.Window") -> None:
+    def __init__(self, window: Optional["webview.Window"] = None) -> None:
         self.window = window
         self.event_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self.workers: dict[str, DownloadWorker] = {}
@@ -41,6 +41,8 @@ class Bridge:
     def minimize_window(self) -> None:
         """Minimize the application window."""
 
+        if not self.window:
+            return
         try:
             self.window.minimize()
         except Exception:
@@ -52,7 +54,8 @@ class Bridge:
 
         self.shutdown()
         try:
-            self.window.destroy()
+            if self.window:
+                self.window.destroy()
         except Exception:
             return
 
@@ -166,13 +169,14 @@ class Bridge:
                     if worker and not worker.is_alive():
                         self.workers.pop(task_id, None)
 
-            try:
-                payload = json.dumps(event, ensure_ascii=False)
-                self.window.evaluate_js(
-                    f"window.handlePyEvent && window.handlePyEvent({payload});"
-                )
-            except Exception:
-                continue
+            if self.window:
+                try:
+                    payload = json.dumps(event, ensure_ascii=False)
+                    self.window.evaluate_js(
+                        f"window.handlePyEvent && window.handlePyEvent({payload});"
+                    )
+                except Exception:
+                    continue
 
 
 def _resolve_web_path() -> str:
@@ -184,16 +188,26 @@ def _resolve_web_path() -> str:
 
 def main() -> None:
     html_uri = _resolve_web_path()
+
+    # 1. Create Bridge without window
+    bridge = Bridge(window=None)
+
+    # 2. Create window passing bridge via js_api
     window = webview.create_window(
         "YT Downloader",
         html_uri,
         width=1200,
         height=760,
         min_size=(960, 640),
+        js_api=bridge,
     )
-    bridge = Bridge(window)
+
+    # 3. Attach created window back to bridge
+    bridge.window = window
+
     window.events.closed += bridge.shutdown
-    window.expose(bridge)
+
+    # 4. Expose handled via js_api
     webview.start()
 
 
