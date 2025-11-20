@@ -26,10 +26,10 @@
 
         /* RANGE PREVIEW */
         .trim-track { position: relative; height: 6px; background: #1f1f24; border-radius: 999px; }
-        .trim-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #4f46e5, #8b5cf6); border-radius: 999px; left: 20%; right: 10%; }
+        .trim-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #4f46e5, #8b5cf6); border-radius: 999px; left: 0%; right: 0%; }
         .trim-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 18px; height: 18px; background: white; border-radius: 999px; border: 3px solid #6366f1; box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
-        .trim-handle:first-child { left: 20%; }
-        .trim-handle:last-child { right: 10%; }
+        .trim-handle:first-child { left: 0%; }
+        .trim-handle:last-child { right: 0%; transform: translate(50%, -50%); }
     </style>
 </head>
 <body class="h-screen flex flex-col border border-zinc-800 rounded-2xl overflow-hidden">
@@ -37,7 +37,7 @@
     <div class="h-11 bg-[#1a1a1f] border-b border-zinc-800 flex items-center justify-between px-4 drag-handle">
         <div class="flex items-center gap-2 text-sm text-zinc-200">
             <i class="fa-solid fa-cloud-arrow-down text-indigo-500"></i>
-            <span class="font-semibold">Video Downloader v2.0</span>
+            <span class="font-semibold">Video Downloader</span>
         </div>
         <div class="flex items-center gap-3 no-drag">
             <button onclick="pywebview.api.minimize_window()" class="text-zinc-500 hover:text-white"><i class="fa-solid fa-minus"></i></button>
@@ -51,9 +51,16 @@
         <aside class="w-[420px] bg-[#18181b] border-r border-zinc-800 p-6 flex flex-col gap-5 overflow-y-auto">
             <div>
                 <label class="text-xs font-bold text-zinc-500 uppercase mb-2 block">ДЖЕРЕЛО</label>
-                <div class="relative">
-                    <i class="fa-solid fa-link text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
-                    <input id="url-input" type="text" placeholder="Вставте посилання..." class="w-full bg-[#27272a] border border-zinc-700 rounded-lg py-3 pl-10 pr-3 text-sm text-white focus:border-indigo-500 outline-none">
+                <div class="relative flex items-center gap-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-link text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input id="url-input" type="text" placeholder="Вставте посилання..." class="w-full bg-[#27272a] border border-zinc-700 rounded-lg py-3 pl-10 pr-3 text-sm text-white focus:border-indigo-500 outline-none">
+                    </div>
+                    <button id="btn-search" onclick="searchVideo()" class="h-[46px] px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-sm font-semibold flex items-center gap-2 shadow-lg transition">
+                        <i id="search-icon" class="fa-solid fa-magnifying-glass"></i>
+                        <i id="search-spinner" class="fa-solid fa-spinner animate-spin hidden"></i>
+                        <span>Пошук</span>
+                    </button>
                 </div>
             </div>
 
@@ -94,33 +101,50 @@
                 </div>
             </div>
 
-            <div class="bg-[#202023] border border-zinc-800 rounded-2xl overflow-hidden shadow-lg">
-                <div class="h-40 bg-[#1f1f24] relative flex items-center justify-center">
-                    <div class="w-[78%] h-[74%] bg-[#0f0f11] rounded-2xl flex items-center justify-center text-zinc-600 border border-zinc-800">
-                        <i class="fa-brands fa-youtube text-3xl"></i>
-                    </div>
-                    <span class="absolute bottom-3 right-4 text-xs bg-[#0b0b0d] border border-zinc-700 text-white px-2 py-1 rounded-md">14:20</span>
+            <div class="bg-[#202023] border border-zinc-800 rounded-2xl overflow-hidden shadow-lg" id="preview-card">
+                <div id="preview-placeholder" class="h-40 bg-[#1f1f24] border border-dashed border-zinc-700 text-zinc-500 flex items-center justify-center text-sm">
+                    Введіть посилання, щоб побачити прев'ю відео
                 </div>
-                <div class="p-4 space-y-3">
-                    <div>
-                        <div class="text-sm font-semibold">Удар по НПЗ: як остаточно виграти війну</div>
-                        <div class="text-xs text-zinc-500">Тривалість: 15 хв</div>
+                <div id="preview-loaded" class="hidden">
+                    <div class="h-40 bg-[#0f0f11] relative flex items-center justify-center">
+                        <img id="preview-thumb" alt="Прев'ю" class="w-full h-full object-cover">
+                        <span id="preview-duration" class="absolute bottom-3 right-4 text-xs bg-[#0b0b0d] border border-zinc-700 text-white px-2 py-1 rounded-md">--:--</span>
                     </div>
-                    <div class="space-y-2">
-                        <div class="flex justify-between text-xs text-zinc-500">
-                            <span>00:00</span>
-                            <span>14:20</span>
+                    <div class="p-4 space-y-3">
+                        <div>
+                            <div id="preview-title" class="text-sm font-semibold truncate text-white"></div>
+                            <div class="text-xs text-zinc-500 mt-1 flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                                <span>Готово до завантаження</span>
+                            </div>
                         </div>
-                        <div class="trim-track">
-                            <div class="trim-fill"></div>
-                            <div class="trim-handle"></div>
-                            <div class="trim-handle"></div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-xs text-zinc-500">
+                                <span>00:00</span>
+                                <span id="preview-end">--:--</span>
+                            </div>
+                            <div class="trim-track">
+                                <div class="trim-fill"></div>
+                                <span class="trim-handle"></span>
+                                <span class="trim-handle"></span>
+                            </div>
+                            <div class="flex justify-between text-xs text-zinc-500">
+                                <span>Початок</span>
+                                <span>Кінець</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm text-zinc-400 border-t border-zinc-800 pt-3">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-brands fa-youtube text-red-400"></i>
+                                <span>Підтримується</span>
+                            </div>
+                            <span class="text-xs text-indigo-300">HD</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <button onclick="initiateDownload()" class="mt-auto w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold py-3 rounded-2xl transition shadow-lg shadow-purple-800/30 flex justify-center items-center gap-2 text-sm">
+            <button id="btn-download" onclick="initiateDownload()" disabled class="mt-auto w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold py-3 rounded-2xl transition shadow-lg shadow-purple-800/30 flex justify-center items-center gap-2 text-sm opacity-50 cursor-not-allowed">
                 <i class="fa-solid fa-download"></i>
                 Завантажити
             </button>
@@ -147,7 +171,7 @@
     <footer class="h-11 bg-[#18181b] border-t border-zinc-800 px-5 flex items-center justify-between text-xs text-zinc-400">
         <div class="flex items-center gap-3">
             <span class="flex items-center gap-2 text-green-400"><span class="w-2 h-2 bg-green-400 rounded-full"></span>Готовий</span>
-            <span class="text-zinc-500">Версія 0.2.34</span>
+            <span class="text-zinc-500">Версія <span id="app-version">loading...</span></span>
         </div>
         <div class="flex items-center gap-4 text-zinc-500">
             <span>UA</span>
@@ -164,6 +188,101 @@
             error: 'Помилка',
             idle: 'Початок...'
         };
+
+        let currentMetadata = null;
+
+        window.onload = function() {
+            resetPreview();
+
+            if (pywebview?.api?.get_init_data) {
+                pywebview.api.get_init_data().then(data => {
+                    const versionEl = document.getElementById('app-version');
+                    if (versionEl) versionEl.textContent = data?.version || '—';
+                }).catch(() => {
+                    const versionEl = document.getElementById('app-version');
+                    if (versionEl) versionEl.textContent = '—';
+                });
+            }
+        };
+
+        function setSearchLoading(isLoading) {
+            const btn = document.getElementById('btn-search');
+            const icon = document.getElementById('search-icon');
+            const spinner = document.getElementById('search-spinner');
+            if (!btn || !icon || !spinner) return;
+            btn.disabled = isLoading;
+            btn.classList.toggle('opacity-50', isLoading);
+            btn.classList.toggle('cursor-not-allowed', isLoading);
+            icon.classList.toggle('hidden', isLoading);
+            spinner.classList.toggle('hidden', !isLoading);
+        }
+
+        function setDownloadButtonDisabled(disabled) {
+            const btn = document.getElementById('btn-download');
+            if (!btn) return;
+            btn.disabled = disabled;
+            btn.classList.toggle('opacity-50', disabled);
+            btn.classList.toggle('cursor-not-allowed', disabled);
+        }
+
+        function resetPreview() {
+            currentMetadata = null;
+            const placeholder = document.getElementById('preview-placeholder');
+            const loaded = document.getElementById('preview-loaded');
+            if (placeholder) placeholder.classList.remove('hidden');
+            if (loaded) loaded.classList.add('hidden');
+
+            const titleEl = document.getElementById('preview-title');
+            const durationEl = document.getElementById('preview-duration');
+            const endEl = document.getElementById('preview-end');
+            const thumb = document.getElementById('preview-thumb');
+
+            if (titleEl) titleEl.textContent = '';
+            if (durationEl) durationEl.textContent = '--:--';
+            if (endEl) endEl.textContent = '--:--';
+            if (thumb) thumb.src = '';
+
+            setDownloadButtonDisabled(true);
+        }
+
+        function searchVideo() {
+            const url = document.getElementById('url-input').value.trim();
+            if (!url) return alert('Будь ласка, введіть посилання');
+
+            setSearchLoading(true);
+            pywebview.api.fetch_metadata(url).then(res => {
+                setSearchLoading(false);
+                if (res.status === 'ok') {
+                    currentMetadata = { ...res, url };
+                    applyMetadata(res);
+                    setDownloadButtonDisabled(false);
+                } else {
+                    alert(res.error || 'Не вдалося отримати метадані');
+                    resetPreview();
+                }
+            }).catch(() => {
+                setSearchLoading(false);
+                alert('Не вдалося отримати метадані');
+                resetPreview();
+            });
+        }
+
+        function applyMetadata(meta) {
+            const placeholder = document.getElementById('preview-placeholder');
+            const loaded = document.getElementById('preview-loaded');
+            if (placeholder) placeholder.classList.add('hidden');
+            if (loaded) loaded.classList.remove('hidden');
+
+            const titleEl = document.getElementById('preview-title');
+            const durationEl = document.getElementById('preview-duration');
+            const endEl = document.getElementById('preview-end');
+            const thumb = document.getElementById('preview-thumb');
+
+            if (titleEl) titleEl.textContent = meta.title || 'Без назви';
+            if (durationEl) durationEl.textContent = meta.duration_str || '00:00';
+            if (endEl) endEl.textContent = meta.duration_str || '00:00';
+            if (thumb) thumb.src = meta.thumbnail || '';
+        }
 
         function updateQueueCount() {
             const list = document.getElementById('download-list');
@@ -184,13 +303,19 @@
 
             if (!url) return alert('Будь ласка, введіть посилання');
 
-            pywebview.api.start_download(url, path, { mp4: mp4, separate_folder: separateFolder }).then(res => {
+            const titleHint = (currentMetadata && currentMetadata.title) || document.getElementById('preview-title').textContent.trim();
+
+            pywebview.api.start_download(url, path, { mp4: mp4, separate_folder: separateFolder }, titleHint).then(res => {
                 if (res.status === 'ok') {
-                    createTaskCard(res.task_id, url);
+                    const label = titleHint || url;
+                    createTaskCard(res.task_id, label);
                     document.getElementById('url-input').value = '';
+                    resetPreview();
                 } else {
-                    alert(res.message || 'Не вдалося ініціювати завантаження');
+                    alert(res.message || res.error || 'Не вдалося ініціювати завантаження');
                 }
+            }).catch(() => {
+                alert('Не вдалося ініціювати завантаження');
             });
         }
 
