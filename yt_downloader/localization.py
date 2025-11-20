@@ -8,10 +8,10 @@ SUPPORTED_LANGUAGES = ("uk", "en")
 DEFAULT_LANGUAGE = "uk"
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
-    "app_title": {"uk": "YouTube Downloader", "en": "YouTube Downloader"},
+    "app_title": {"uk": "Video Downloader", "en": "Video Downloader"},
     "app_title_with_version": {
-        "uk": "YouTube Downloader {version}",
-        "en": "YouTube Downloader {version}",
+        "uk": "Video Downloader {version}",
+        "en": "Video Downloader {version}",
     },
     "update_check_title": {
         "uk": "Перевірка оновлень",
@@ -100,7 +100,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Не вдалося встановити оновлення: {error}",
         "en": "Failed to install update: {error}",
     },
-    "url_label": {"uk": "YouTube URL", "en": "YouTube URL"},
+    "url_label": {"uk": "URL відео", "en": "Video URL"},
     "search_button": {"uk": "Знайти відео", "en": "Find video"},
     "root_label": {"uk": "Коренева тека", "en": "Root folder"},
     "choose_button": {"uk": "Вибрати", "en": "Browse"},
