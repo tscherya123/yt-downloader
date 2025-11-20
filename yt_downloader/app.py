@@ -1507,12 +1507,14 @@ class DownloaderUI(DownloaderApp):
         canvas_bg = canvas_color or surface
         self.tasks_canvas.configure(
             background=canvas_bg,
+            bg=canvas_bg,
             highlightbackground=canvas_bg,
+            highlightcolor=canvas_bg,
             highlightthickness=0,
             bd=0,
         )
         if self.tasks_inner is not None and canvas_bg is not None:
-            self.tasks_inner.configure(fg_color=canvas_bg)
+            self.tasks_inner.configure(fg_color=canvas_bg, bg_color=canvas_bg)
         self.tasks_scroll.configure(
             fg_color=surface,
             button_color=accent,
