@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -48,6 +50,8 @@ class Bridge:
     SETTINGS_FILE = CONFIG_DIR / "settings.json"
     QUEUE_FILE = CONFIG_DIR / "download_queue.json"
     DEFAULT_ROOT = Path.home() / "Videos" / "Downloaded Videos"
+    UPDATE_CHECK_TIMEOUT = 15.0
+    UPDATE_NETWORK_TIMEOUT = 10.0
 
     def __init__(self, window: Optional["webview.Window"] = None) -> None:
         self.window = window
@@ -71,11 +75,18 @@ class Bridge:
         self.pending_update_info: UpdateInfo | None = None
         self.update_cache_dir = self.CONFIG_DIR / "updates"
         self.update_log_path = self.CONFIG_DIR / "update.log"
+        self._cleanup_stale_update_artifacts()
 
     def get_init_data(self) -> dict[str, Any]:
         """Return static data used to initialize the UI."""
 
-        threading.Thread(target=self.check_updates, daemon=True).start()
+        try:
+            threading.Thread(target=self.check_updates, daemon=True).start()
+        except Exception as exc:  # noqa: BLE001 - surfaced to UI
+            self.update_status = "error"
+            self._emit_update_event(
+                {"type": "update_error", "error": f"Failed to start update check: {exc}"}
+            )
 
         return {
             "version": __version__,
@@ -418,17 +429,40 @@ class Bridge:
     def check_updates(self) -> None:
         self.update_status = "checking"
         self._emit_update_event({"type": "update_checking"})
-        try:
-            info = check_for_update(__version__)
-        except UpdateError as exc:
+
+        result: dict[str, Any] = {}
+        finished = threading.Event()
+
+        def _worker() -> None:
+            try:
+                info = check_for_update(
+                    __version__, timeout=self.UPDATE_NETWORK_TIMEOUT
+                )
+                result["info"] = info
+            except UpdateError as exc:
+                result["error"] = str(exc)
+            except Exception as exc:  # pylint: disable=broad-except
+                result["error"] = str(exc)
+            finally:
+                finished.set()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+        if not finished.wait(self.UPDATE_CHECK_TIMEOUT):
             self.update_status = "error"
-            self._emit_update_event({"type": "update_error", "error": str(exc)})
-            return
-        except Exception as exc:  # pylint: disable=broad-except
-            self.update_status = "error"
-            self._emit_update_event({"type": "update_error", "error": str(exc)})
+            self._emit_update_event(
+                {"type": "update_error", "error": "Update check timed out"}
+            )
             return
 
+        if result.get("error"):
+            self.update_status = "error"
+            self._emit_update_event(
+                {"type": "update_error", "error": str(result["error"])}
+            )
+            return
+
+        info = result.get("info")
         if info is None:
             self.update_status = "ready"
             self.pending_update_info = None
@@ -437,7 +471,62 @@ class Bridge:
 
         self.update_status = "available"
         self.pending_update_info = info
-        self._emit_update_event({"type": "update_available", "version": info.latest_version})
+        self._emit_update_event(
+            {"type": "update_available", "version": info.latest_version}
+        )
+
+    def _neutral_cwd(self) -> Path:
+        try:
+            temp_dir = Path(tempfile.gettempdir())
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            return temp_dir
+        except Exception:  # noqa: BLE001 - defensive fallback
+            return Path.home()
+
+    def _cleanup_stale_update_artifacts(self) -> None:
+        candidates: list[Path] = []
+        try:
+            executable = Path(sys.executable).resolve()
+            candidates.append(executable.with_suffix(executable.suffix + ".bak"))
+            relauncher = executable.with_name(
+                f"{executable.stem}-relauncher{executable.suffix}"
+            )
+            candidates.append(relauncher.with_suffix(relauncher.suffix + ".bak"))
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            executable = None
+        temp_dir = self._neutral_cwd()
+        candidates.extend(temp_dir.glob("yt-downloader-relauncher*.exe"))
+        candidates.extend(self.update_cache_dir.glob("*.bak"))
+        if executable:
+            candidates.append(temp_dir / f"{executable.stem}-relauncher{executable.suffix}")
+
+        for path in candidates:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                continue
+
+    def _copy_relaunch_helper_to_temp(self, helper: Optional[Path]) -> Optional[Path]:
+        if helper is None:
+            return None
+
+        helper_path = helper
+        if not helper_path.exists():
+            return None
+
+        safe_path = self._neutral_cwd() / helper_path.name
+        if safe_path == helper_path:
+            return helper_path
+
+        try:
+            shutil.copy2(helper_path, safe_path)
+            try:
+                safe_path.chmod(0o755)
+            except OSError:
+                pass
+            return safe_path
+        except OSError:
+            return helper_path
 
     def perform_update(self) -> None:
         threading.Thread(target=self._perform_update_worker, daemon=True).start()
@@ -491,8 +580,22 @@ class Bridge:
             {"type": "update_ready", "version": install_result.version, "stage": "install"}
         )
         time.sleep(1.0)
+        popen_kwargs: dict[str, object] = {
+            "close_fds": True,
+            "cwd": str(self._neutral_cwd()),
+        }
+
+        if os.name == "nt":
+            creation_flags = 0
+            creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+            creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            creation_flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            creation_flags |= getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+            if creation_flags:
+                popen_kwargs["creationflags"] = creation_flags
+
         try:
-            subprocess.Popen(command, close_fds=False)
+            subprocess.Popen(command, **popen_kwargs)
         except Exception:
             self._emit_update_event(
                 {"type": "update_error", "error": "Failed to launch updater"}
@@ -518,6 +621,7 @@ class Bridge:
         )
         if not relaunch_helper.exists():
             relaunch_helper = None
+        relaunch_helper = self._copy_relaunch_helper_to_temp(relaunch_helper)
 
         try:
             return build_updater_command(

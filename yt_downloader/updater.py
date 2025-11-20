@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
@@ -41,6 +42,42 @@ def _copy_with_permissions(source: Path, destination: Path) -> None:
         destination.chmod(0o755)
     except OSError:
         pass
+
+
+def _neutral_working_directory() -> Path:
+    try:
+        temp_dir = Path(tempfile.gettempdir())
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        return temp_dir
+    except Exception:  # pragma: no cover - defensive fallback
+        return Path.home()
+
+
+def _prepare_relaunch_helper(relaunch_helper: Optional[Path]) -> Optional[Path]:
+    if relaunch_helper is None:
+        return None
+
+    helper_path = relaunch_helper
+    try:
+        helper_path = helper_path.resolve()
+    except OSError:
+        pass
+
+    if not helper_path.exists():
+        _LOGGER.warning("Relaunch helper is missing: %s", helper_path)
+        return helper_path
+
+    temp_dir = _neutral_working_directory()
+    safe_helper = temp_dir / helper_path.name
+    if safe_helper == helper_path:
+        return helper_path
+
+    try:
+        _copy_with_permissions(helper_path, safe_helper)
+        return safe_helper
+    except OSError as exc:
+        _LOGGER.warning("Failed to copy relaunch helper to temp: %s", exc)
+        return helper_path
 
 
 def _attempt_replace(target: Path, replacement: Path, backup: Path) -> None:
@@ -161,24 +198,26 @@ def run_updater(
     except Exception as exc:  # pylint: disable=broad-except
         _LOGGER.warning("Failed to cleanup update files: %s", exc)
 
+    neutral_cwd = _neutral_working_directory()
+    safe_relaunch_helper = _prepare_relaunch_helper(relaunch_helper)
+
     if launch_path:
         args = [str(launch_path)]
         if launch_args:
             args.extend(launch_args)
         _LOGGER.info("Preparing relaunch: %s", args)
 
-        if relaunch_helper:
-            helper_args = [str(relaunch_helper), "--target", str(launch_path), "--wait", str(relaunch_wait)]
+        if safe_relaunch_helper:
+            helper_args = [str(safe_relaunch_helper), "--target", str(launch_path), "--wait", str(relaunch_wait)]
             if launch_args:
                 helper_args.extend(["--args-json", json.dumps(list(launch_args))])
-            helper_kwargs: dict[str, object] = {"close_fds": True}
-            if relaunch_helper.parent:
-                helper_kwargs["cwd"] = str(relaunch_helper.parent)
+            helper_kwargs: dict[str, object] = {"close_fds": True, "cwd": str(neutral_cwd)}
             if os.name == "nt":  # pragma: no cover - platform dependent
                 creation_flags = 0
                 creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
                 creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                 creation_flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                creation_flags |= getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
                 if creation_flags:
                     helper_kwargs["creationflags"] = creation_flags
             try:
@@ -192,7 +231,7 @@ def run_updater(
         _LOGGER.info("Falling back to launching executable directly")
         popen_kwargs: dict[str, object] = {
             "close_fds": True,
-            "cwd": str(launch_path.parent),
+            "cwd": str(neutral_cwd),
         }
 
         if os.name == "nt":
@@ -200,6 +239,7 @@ def run_updater(
             creation_flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
             creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             creation_flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            creation_flags |= getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
             if creation_flags:
                 popen_kwargs["creationflags"] = creation_flags
         try:

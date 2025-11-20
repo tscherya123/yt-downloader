@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import sys
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def test_run_updater_launches_with_expected_parameters(monkeypatch, tmp_path) ->
     assert target.read_text() == "new-version"
     assert captured["cmd"] == [str(target), "--foo"]
     kwargs = captured["kwargs"]
-    assert kwargs["cwd"] == str(tmp_path)
+    assert kwargs["cwd"] == str(Path(tempfile.gettempdir()))
     assert kwargs["close_fds"] is True
     if os.name == "nt":
         assert kwargs.get("creationflags", 0)
@@ -105,6 +106,7 @@ def test_run_updater_uses_relaunch_helper(monkeypatch, tmp_path) -> None:
     source.write_text("new-version")
     target.write_text("old-version")
     helper = tmp_path / "helper.exe"
+    helper.write_text("helper")
 
     calls: list[tuple[list[str], dict[str, object]]] = []
 
@@ -133,7 +135,7 @@ def test_run_updater_uses_relaunch_helper(monkeypatch, tmp_path) -> None:
     assert exit_code == 0
     assert len(calls) == 1
     cmd, kwargs = calls[0]
-    assert cmd[0] == str(helper)
+    assert cmd[0] == str(Path(tempfile.gettempdir()) / helper.name)
     assert "--target" in cmd
     assert "--wait" in cmd
     assert "0.25" in cmd
