@@ -284,26 +284,33 @@ class DownloaderUI(DownloaderApp):
             font=self.base_font,
         )
         self.separate_check.grid(row=2, column=0, sticky="w", pady=(12, 0))
+
+        download_options_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+        download_options_frame.grid(
+            row=2, column=1, columnspan=2, sticky="w", padx=(12, 0), pady=(12, 0)
+        )
+        download_options_frame.grid_columnconfigure(0, weight=0)
+        download_options_frame.grid_columnconfigure(1, weight=0)
+        self.download_options_frame = download_options_frame
+
         self.convert_check = ctk.CTkCheckBox(
-            left_frame,
+            download_options_frame,
             text=self._("convert_to_mp4"),
             variable=self.convert_to_mp4_var,
             onvalue=True,
             offvalue=False,
             font=self.base_font,
         )
-        self.convert_check.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(12, 0))
+        self.convert_check.grid(row=0, column=0, sticky="w")
         self.sequential_check = ctk.CTkCheckBox(
-            left_frame,
+            download_options_frame,
             text=self._("sequential_downloads"),
             variable=self.sequential_downloads_var,
             onvalue=True,
             offvalue=False,
             font=self.base_font,
         )
-        self.sequential_check.grid(
-            row=2, column=2, sticky="w", padx=(12, 0), pady=(12, 0)
-        )
+        self.sequential_check.grid(row=0, column=1, sticky="w", padx=(12, 0))
         self.download_button = ctk.CTkButton(
             left_frame,
             text=self._("download_button"),
