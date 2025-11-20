@@ -13,6 +13,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import uuid
 import webbrowser
 from pathlib import Path
@@ -22,6 +23,15 @@ import webview
 
 from yt_downloader.backend import fetch_video_metadata
 from yt_downloader.localization import DEFAULT_LANGUAGE
+from yt_downloader.updater import build_updater_command
+from yt_downloader.updates import (
+    UpdateError,
+    UpdateInfo,
+    InstallResult,
+    check_for_update,
+    download_update_asset,
+    install_downloaded_asset,
+)
 from yt_downloader.utils import (
     format_timestamp,
     is_supported_video_url,
@@ -56,9 +66,15 @@ class Bridge:
         )
         self._ensure_root_folder(self.root_folder)
         self.queue_items = self._load_queue()
+        self.update_status = "checking"
+        self.pending_update_info: UpdateInfo | None = None
+        self.update_cache_dir = self.CONFIG_DIR / "updates"
+        self.update_log_path = self.CONFIG_DIR / "update.log"
 
     def get_init_data(self) -> dict[str, Any]:
         """Return static data used to initialize the UI."""
+
+        threading.Thread(target=self.check_updates, daemon=True).start()
 
         return {
             "version": __version__,
@@ -321,6 +337,136 @@ class Bridge:
             worker.join(timeout=1.0)
         if self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=1.0)
+
+    def check_updates(self) -> None:
+        self.update_status = "checking"
+        self._emit_update_event({"type": "update_checking"})
+        try:
+            info = check_for_update(__version__)
+        except UpdateError as exc:
+            self.update_status = "error"
+            self._emit_update_event({"type": "update_error", "error": str(exc)})
+            return
+        except Exception as exc:  # pylint: disable=broad-except
+            self.update_status = "error"
+            self._emit_update_event({"type": "update_error", "error": str(exc)})
+            return
+
+        if info is None:
+            self.update_status = "ready"
+            self.pending_update_info = None
+            self._emit_update_event({"type": "update_not_found"})
+            return
+
+        self.update_status = "available"
+        self.pending_update_info = info
+        self._emit_update_event({"type": "update_available", "version": info.latest_version})
+
+    def perform_update(self) -> None:
+        threading.Thread(target=self._perform_update_worker, daemon=True).start()
+
+    def _perform_update_worker(self) -> None:
+        info = self.pending_update_info
+        if info is None:
+            self._emit_update_event(
+                {"type": "update_error", "error": "Update metadata is missing"}
+            )
+            return
+
+        self.update_status = "installing"
+
+        def progress(downloaded: int, total: int | None) -> None:
+            percent = 0
+            if total and total > 0:
+                percent = min(int((downloaded / total) * 100), 100)
+            self._emit_update_event(
+                {"type": "update_progress", "progress": percent, "stage": "download"}
+            )
+
+        try:
+            download_path = download_update_asset(
+                info, self.update_cache_dir, progress_callback=progress
+            )
+            self._emit_update_event(
+                {"type": "update_progress", "progress": 0, "stage": "install"}
+            )
+            install_result = install_downloaded_asset(
+                download_path, info.latest_version, self.update_cache_dir
+            )
+        except UpdateError as exc:
+            self._emit_update_event({"type": "update_error", "error": str(exc)})
+            return
+        except Exception as exc:  # pylint: disable=broad-except
+            self._emit_update_event({"type": "update_error", "error": str(exc)})
+            return
+
+        command = self._build_update_command(install_result)
+        if not command:
+            self._emit_update_event(
+                {
+                    "type": "update_error",
+                    "error": "Unable to prepare updater command",
+                }
+            )
+            return
+
+        self._emit_update_event(
+            {"type": "update_ready", "version": install_result.version, "stage": "install"}
+        )
+        time.sleep(1.0)
+        try:
+            subprocess.Popen(command, close_fds=False)
+        except Exception:
+            self._emit_update_event(
+                {"type": "update_error", "error": "Failed to launch updater"}
+            )
+            return
+
+        if self.window:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass
+        sys.exit(0)
+
+    def _build_update_command(self, result: InstallResult) -> list[str] | None:
+        executable = result.executable
+        if executable is None:
+            return None
+        current_executable = Path(sys.executable).resolve()
+        if not current_executable.exists():
+            return None
+        relaunch_helper = current_executable.with_name(
+            f"{current_executable.stem}-relauncher{current_executable.suffix}"
+        )
+        if not relaunch_helper.exists():
+            relaunch_helper = None
+
+        try:
+            return build_updater_command(
+                executable,
+                current_executable,
+                current_executable,
+                sys.argv[1:],
+                self.update_log_path,
+                wait_before=0.5,
+                max_wait=120.0,
+                relaunch_helper=relaunch_helper,
+                relaunch_wait=0.5,
+            )
+        except Exception:
+            return None
+
+    def _emit_update_event(self, event: dict[str, Any]) -> None:
+        if not self.window:
+            return
+        try:
+            payload = json.dumps(event, ensure_ascii=False)
+            self.window.evaluate_js(
+                f"window.handlePyEvent && window.handlePyEvent({payload});"
+            )
+        except Exception:
+            return
 
     def _dispatch_events(self) -> None:
         while self._running:
