@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest pyinstaller yt-dlp Pillow customtkinter
+          python -m pip install pytest pyinstaller yt-dlp Pillow customtkinter pywebview
 
       - name: Download FFmpeg binaries
         shell: pwsh

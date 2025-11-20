@@ -1,6 +1,7 @@
-"""Backward-compatible entry point for the modularized UI package."""
+"""Entry point for launching the PyWebView UI."""
 
-from yt_downloader.app import DownloaderUI, main
+from yt_downloader.app import DownloaderUI
+from main_webview import main
 
 __all__ = ["DownloaderUI", "main"]
 
