@@ -118,12 +118,12 @@
             </div>
 
             <div class="bg-[#202023] border border-zinc-800 rounded-2xl overflow-hidden shadow-lg" id="preview-card">
-                <div id="preview-placeholder" class="h-40 bg-[#1f1f24] border border-dashed border-zinc-700 text-zinc-500 flex items-center justify-center text-sm">
+                <div id="preview-placeholder" class="bg-[#1f1f24] border border-dashed border-zinc-700 text-zinc-500 flex items-center justify-center text-sm aspect-video">
                     Введіть посилання, щоб побачити прев'ю відео
                 </div>
                 <div id="preview-loaded" class="hidden">
-                    <div class="h-40 bg-[#0f0f11] relative flex items-center justify-center">
-                        <img id="preview-thumb" alt="Прев'ю" class="w-full h-full object-contain bg-black">
+                    <div class="bg-[#0f0f11] relative flex items-center justify-center aspect-video w-full">
+                        <img id="preview-thumb" alt="Прев'ю" class="w-full h-full object-cover bg-black">
                         <span id="preview-duration" class="absolute bottom-3 right-4 text-xs bg-[#0b0b0d] border border-zinc-700 text-white px-2 py-1 rounded-md">--:--</span>
                     </div>
                     <div class="p-4 space-y-3">
