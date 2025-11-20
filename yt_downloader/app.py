@@ -1503,7 +1503,13 @@ class DownloaderUI(DownloaderApp):
             self.preview_image_label.configure(text_color=muted, fg_color=surface)
             self.queue_columns_frame.configure(fg_color=surface)
 
-        self.tasks_canvas.configure(background=canvas_color or surface, highlightthickness=0)
+        canvas_bg = canvas_color or surface
+        self.tasks_canvas.configure(
+            background=canvas_bg,
+            highlightbackground=canvas_bg,
+            highlightthickness=0,
+            bd=0,
+        )
         self.tasks_scroll.configure(
             fg_color=surface,
             button_color=accent,
