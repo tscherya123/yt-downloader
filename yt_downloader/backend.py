@@ -106,7 +106,7 @@ def download_video(
         "noprogress": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios"],
+                "player_client": ["ios", "web"],
             }
         },
     }
