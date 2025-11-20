@@ -18,43 +18,30 @@ class ThemeDefinition:
     colors: Dict[str, str]
 
 
-DEFAULT_THEME = "light"
+DEFAULT_THEME = "modern"
 
 
 _PALETTES: Dict[str, Dict[str, str]] = {
-    "light": {
-        "background": "#f5f6fb",
-        "surface": "#ffffff",
-        "text": "#0f172a",
-        "muted": "#6b7287",
-        "accent": "#7c5cff",
-        "accent_hover": "#8b6dff",
-        "disabled": "#c8cce0",
-        "button_disabled": "#e8eaf5",
-        "button_disabled_text": "#9aa1bd",
+    "modern": {
+        "background": "#09090b",
+        "surface": "#18181b",
+        "panel": "#202023",
+        "input": "#27272a",
+        "text": "#e4e4e7",
+        "muted": "#a1a1aa",
+        "accent": "#6366f1",
+        "accent_hover": "#4f46e5",
+        "disabled": "#3f3f46",
+        "button_disabled": "#27272a",
+        "button_disabled_text": "#a1a1aa",
         "button_text": "#ffffff",
-        "entry": "#f2f4ff",
-        "canvas": "#eef1fb",
-        "log_bg": "#ffffff",
-        "log_fg": "#0f172a",
-        "highlight": "#e8e9f7",
-    },
-    "dark": {
-        "background": "#05060b",
-        "surface": "#0f111c",
-        "text": "#e9eafb",
-        "muted": "#9ea4c7",
-        "accent": "#7c5cff",
-        "accent_hover": "#8d6dff",
-        "disabled": "#484d6a",
-        "button_disabled": "#161827",
-        "button_disabled_text": "#7d83a6",
-        "button_text": "#ffffff",
-        "entry": "#0b0e19",
-        "canvas": "#0b0e19",
-        "log_bg": "#0a0c15",
-        "log_fg": "#e9eafb",
-        "highlight": "#171a2a",
+        "entry": "#27272a",
+        "canvas": "#09090b",
+        "log_bg": "#18181b",
+        "log_fg": "#e4e4e7",
+        "highlight": "#3f3f46",
+        "success": "#22c55e",
+        "error": "#ef4444",
     },
 }
 

@@ -1,5 +1,3 @@
-"""Reusable CustomTkinter widgets for the downloader UI."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,8 +8,8 @@ import customtkinter as ctk
 from .utils import shorten_title
 
 
-class TaskRow(ctk.CTkFrame):
-    """Row widget representing a single download task."""
+class DownloadItem(ctk.CTkFrame):
+    """Modern download row styled to match the new Fluent-inspired UI."""
 
     def __init__(
         self,
@@ -32,7 +30,7 @@ class TaskRow(ctk.CTkFrame):
         title_font: Optional[ctk.CTkFont] = None,
         status_font: Optional[ctk.CTkFont] = None,
     ) -> None:
-        super().__init__(master, corner_radius=8)
+        super().__init__(master, corner_radius=12, border_width=1)
         self.task_id = task_id
         self.full_title = title
         self.display_title = shorten_title(title)
@@ -58,41 +56,68 @@ class TaskRow(ctk.CTkFrame):
         self._button_text_color: Optional[str] = None
         self._button_disabled_text: Optional[str] = None
 
+        self.columnconfigure(1, weight=1)
+
+        self.icon_frame = ctk.CTkFrame(self, width=48, height=48, corner_radius=10)
+        self.icon_frame.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=12, pady=12)
+        self.icon_frame.grid_propagate(False)
+        self.icon_label = ctk.CTkLabel(self.icon_frame, text="🎬", font=("Roboto", 18, "bold"))
+        self.icon_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        info_frame = ctk.CTkFrame(self, fg_color="transparent")
+        info_frame.grid(row=0, column=1, sticky="nsew", pady=(12, 0), padx=(0, 12))
+        info_frame.columnconfigure(0, weight=1)
+
         self.title_label = ctk.CTkLabel(
-            self,
+            info_frame,
             text=self.display_title,
             anchor="w",
             justify="left",
         )
         if title_font is not None:
             self.title_label.configure(font=title_font)
+        self.title_label.grid(row=0, column=0, sticky="ew")
 
         self.status_label = ctk.CTkLabel(
-            self,
+            info_frame,
             textvariable=self.status_var,
             anchor="w",
             justify="left",
         )
         if status_font is not None:
             self.status_label.configure(font=status_font)
+        self.status_label.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+        self.progress = ctk.CTkProgressBar(self, height=6)
+        self.progress.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(4, 12))
+        self.progress.set(0.0)
 
         self.actions_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.actions_frame.grid(row=0, column=2, rowspan=2, sticky="e", padx=(0, 12))
+        for index in range(5):
+            self.actions_frame.columnconfigure(index, weight=0)
+
+        self.pause_button = ctk.CTkButton(
+            self.actions_frame,
+            text="❚❚",
+            width=36,
+            command=self._cancel_task,
+        )
         self.cancel_button = ctk.CTkButton(
             self.actions_frame,
-            text=self.translate("button_cancel"),
-            command=self._cancel_task,
-            width=110,
+            text="×",
+            width=36,
+            command=self._remove_from_history,
         )
         self.open_button = ctk.CTkButton(
             self.actions_frame,
-            text=self.translate("button_open_folder"),
+            text="⬓",
+            width=36,
             command=self._open_folder,
-            width=130,
-            state="disabled",
         )
         self.open_link_button = ctk.CTkButton(
             self.actions_frame,
-            text="»",
+            text="↗",
             width=36,
             command=self._open_source_url,
         )
@@ -102,38 +127,12 @@ class TaskRow(ctk.CTkFrame):
             width=36,
             command=self._trigger_retry,
         )
-        self.remove_button = ctk.CTkButton(
-            self.actions_frame,
-            text="×",
-            width=36,
-            command=self._remove_from_history,
-        )
 
-        self.columnconfigure(0, weight=3)
-        self.columnconfigure(1, weight=2)
-        self.columnconfigure(2, weight=0)
-        self.title_label.grid(row=0, column=0, sticky="w")
-        self.status_label.grid(row=0, column=1, sticky="w", padx=(12, 0))
-        self.actions_frame.grid(row=0, column=2, sticky="e", padx=(12, 0))
-        self.actions_frame.columnconfigure(0, weight=0)
-
-        self.cancel_button.grid(row=0, column=0, padx=(0, 6))
-        self.open_button.grid(row=0, column=1, padx=(0, 6))
-        self.open_link_button.grid(row=0, column=2, padx=(0, 6))
-        self.retry_button.grid(row=0, column=3, padx=(0, 6))
-        self.remove_button.grid(row=0, column=4)
-
-        self.cancel_button.configure(state="disabled")
-        self.open_button.configure(state="disabled")
-        self.open_link_button.configure(state="disabled")
-        self.retry_button.configure(state="disabled")
-        self.remove_button.configure(state="disabled")
-
-        self.cancel_button.grid_remove()
-        self.open_button.grid_remove()
-        self.open_link_button.grid_remove()
-        self.retry_button.grid_remove()
-        self.remove_button.grid_remove()
+        self.pause_button.grid(row=0, column=0, padx=(0, 6))
+        self.cancel_button.grid(row=0, column=1, padx=(0, 6))
+        self.open_button.grid(row=0, column=2, padx=(0, 6))
+        self.open_link_button.grid(row=0, column=3, padx=(0, 6))
+        self.retry_button.grid(row=0, column=4)
 
         self._update_status_text()
         self._update_actions()
@@ -163,13 +162,11 @@ class TaskRow(ctk.CTkFrame):
 
     def retranslate(self, translator: Callable[..., str]) -> None:
         self.translate = translator
-        self.cancel_button.configure(text=self.translate("button_cancel"))
-        self.open_button.configure(text=self.translate("button_open_folder"))
         self._update_status_text()
         self._update_actions()
 
     def mark_cancelling(self) -> None:
-        self._set_button_state(self.cancel_button, False)
+        self._set_button_state(self.pause_button, False)
 
     def _cancel_task(self) -> None:
         if self._cancel_callback is None:
@@ -201,55 +198,36 @@ class TaskRow(ctk.CTkFrame):
         self.status_var.set(self.translate("status_prefix", status=status_text))
 
     def _update_actions(self) -> None:
-        show_cancel = (
-            self.status_code in {"downloading", "converting"}
-            and self._cancel_callback is not None
-        )
-        if show_cancel:
-            self.cancel_button.grid()
-            self._set_button_state(self.cancel_button, True)
-        else:
-            self._set_button_state(self.cancel_button, False)
-            self.cancel_button.grid_remove()
+        show_pause = self.status_code in {"downloading", "converting"} and self._cancel_callback
+        self.pause_button.grid() if show_pause else self.pause_button.grid_remove()
 
-        show_open = self.status_code == "done"
-        if show_open:
-            self.open_button.grid()
-            self._set_button_state(self.open_button, self.final_path is not None)
-        else:
-            self._set_button_state(self.open_button, False)
-            self.open_button.grid_remove()
+        show_cancel = (
+            self._remove_callback is not None
+            and self.status_code not in {"downloading", "converting"}
+        )
+        self.cancel_button.grid() if show_cancel else self.cancel_button.grid_remove()
+
+        show_open = self.status_code == "done" and self.final_path is not None
+        self.open_button.grid() if show_open else self.open_button.grid_remove()
 
         show_open_link = bool(self.source_url and self._open_url_callback)
-        if show_open_link:
-            self.open_link_button.grid()
-            self._set_button_state(self.open_link_button, True)
-        else:
-            self._set_button_state(self.open_link_button, False)
-            self.open_link_button.grid_remove()
+        self.open_link_button.grid() if show_open_link else self.open_link_button.grid_remove()
 
         show_retry = (
             self._retry_callback is not None
             and self.source_url
             and self.status_code in {"error", "cancelled", "waiting"}
         )
-        if show_retry:
-            self.retry_button.grid()
-            self._set_button_state(self.retry_button, True)
-        else:
-            self._set_button_state(self.retry_button, False)
-            self.retry_button.grid_remove()
+        self.retry_button.grid() if show_retry else self.retry_button.grid_remove()
 
-        show_remove = (
-            self._remove_callback is not None
-            and self.status_code not in {"downloading", "converting"}
-        )
-        if show_remove:
-            self.remove_button.grid()
-            self._set_button_state(self.remove_button, True)
-        else:
-            self._set_button_state(self.remove_button, False)
-            self.remove_button.grid_remove()
+        for button in (
+            self.pause_button,
+            self.cancel_button,
+            self.open_button,
+            self.open_link_button,
+            self.retry_button,
+        ):
+            self._set_button_state(button, str(button.cget("state")) != "disabled")
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         """Update colors to match the active application palette."""
@@ -263,24 +241,34 @@ class TaskRow(ctk.CTkFrame):
         accent = palette.get("accent")
         hover = palette.get("accent_hover", accent)
         disabled = palette.get("disabled")
-        disabled_bg = palette.get("button_disabled", disabled or accent)
-        disabled_text = palette.get("button_disabled_text", disabled or muted)
-        button_text = surface if accent else text
+        highlight = palette.get("highlight", surface)
+        button_text = palette.get("button_text", text)
 
         if surface:
-            self.configure(fg_color=surface)
+            self.configure(fg_color=surface, border_color=palette.get("border", highlight))
             self.actions_frame.configure(fg_color=surface)
         if text:
             self.title_label.configure(text_color=text)
         if muted:
             self.status_label.configure(text_color=muted)
+            self.icon_label.configure(text_color=muted)
+        if highlight:
+            self.icon_frame.configure(fg_color=palette.get("input", highlight))
 
-        base_accent = accent or self._button_normal_color or "#2563eb"
+        base_accent = accent or self._button_normal_color or "#6366f1"
         base_hover = hover or base_accent
-        base_disabled_bg = disabled_bg or self._button_disabled_color or "#a0a4a8"
-        base_text = button_text or self._button_text_color or text or "#000000"
+        base_disabled_bg = palette.get("button_disabled", disabled or base_accent)
+        base_text = button_text or self._button_text_color or text or "#ffffff"
         base_disabled_text = (
-            disabled_text or self._button_disabled_text or muted or "#6f6f6f"
+            palette.get("button_disabled_text")
+            or self._button_disabled_text
+            or muted
+            or "#6f6f6f"
+        )
+
+        self.progress.configure(
+            fg_color=palette.get("input", surface),
+            progress_color=base_accent,
         )
 
         self._button_normal_color = base_accent
@@ -289,20 +277,15 @@ class TaskRow(ctk.CTkFrame):
         self._button_text_color = base_text
         self._button_disabled_text = base_disabled_text
 
-        buttons = (
+        for button in (
+            self.pause_button,
             self.cancel_button,
             self.open_button,
             self.open_link_button,
             self.retry_button,
-            self.remove_button,
-        )
-        for button in buttons:
+        ):
             configure_kwargs: dict[str, object] = {"border_width": 0}
-            disabled_text_color = (
-                self._button_disabled_text or button.cget("text_color_disabled")
-            )
-            if disabled_text_color:
-                configure_kwargs["text_color_disabled"] = disabled_text_color
+            configure_kwargs["text_color_disabled"] = base_disabled_text
             button.configure(**configure_kwargs)
             self._set_button_state(
                 button,
@@ -331,3 +314,10 @@ class TaskRow(ctk.CTkFrame):
                 hover_color=disabled_bg,
                 text_color_disabled=disabled_text,
             )
+
+
+# Backward compatibility for existing imports
+TaskRow = DownloadItem
+
+
+__all__ = ["DownloadItem", "TaskRow"]
