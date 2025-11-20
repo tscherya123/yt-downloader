@@ -248,7 +248,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "language_en": {"uk": "Англійська", "en": "English"},
     "theme_light": {"uk": "Світла", "en": "Light"},
     "theme_dark": {"uk": "Темна", "en": "Dark"},
-    "theme_modern": {"uk": "Сучасна тьмяна", "en": "Modern dark"},
     "log_root": {"uk": "[CONFIG] ROOT={root}", "en": "[CONFIG] ROOT={root}"},
     "log_workdir": {
         "uk": "[INFO] Робоча папка: {folder}",
