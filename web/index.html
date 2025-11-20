@@ -5,100 +5,175 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* SCROLLBAR & GLOBAL STYLES */
+        /* GLOBAL */
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #0b0b0d; color: #f4f4f5; user-select: none; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #18181b; }
-        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 8px; }
         ::-webkit-scrollbar-thumb:hover { background: #52525b; }
-        body { font-family: 'Inter', sans-serif; background-color: #09090b; color: #e4e4e7; user-select: none; overflow: hidden; }
         .drag-handle { -webkit-app-region: drag; }
         .no-drag { -webkit-app-region: no-drag; }
-        .animate-pulse-short { animation: pulse 1.5s ease-in-out infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
+
+        /* TOGGLES */
+        .toggle { position: relative; width: 48px; height: 26px; display: inline-block; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #3f3f46; transition: 0.3s; border-radius: 9999px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: #d4d4d8; transition: 0.3s; border-radius: 9999px; box-shadow: 0 6px 14px rgba(0,0,0,0.4); }
+        .toggle input:checked + .toggle-slider { background: linear-gradient(90deg, #4f46e5, #8b5cf6); }
+        .toggle input:checked + .toggle-slider:before { transform: translateX(22px); background: white; }
+
+        /* RANGE PREVIEW */
+        .trim-track { position: relative; height: 6px; background: #1f1f24; border-radius: 999px; }
+        .trim-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #4f46e5, #8b5cf6); border-radius: 999px; left: 20%; right: 10%; }
+        .trim-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 18px; height: 18px; background: white; border-radius: 999px; border: 3px solid #6366f1; box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
+        .trim-handle:first-child { left: 20%; }
+        .trim-handle:last-child { right: 10%; }
     </style>
 </head>
-<body class="h-screen flex flex-col border border-zinc-800 rounded-lg overflow-hidden">
-
+<body class="h-screen flex flex-col border border-zinc-800 rounded-2xl overflow-hidden">
     <!-- TITLE BAR -->
-    <div class="h-10 bg-zinc-900 flex items-center justify-between px-4 border-b border-zinc-800 drag-handle">
-        <div class="flex items-center gap-2">
+    <div class="h-11 bg-[#1a1a1f] border-b border-zinc-800 flex items-center justify-between px-4 drag-handle">
+        <div class="flex items-center gap-2 text-sm text-zinc-200">
             <i class="fa-solid fa-cloud-arrow-down text-indigo-500"></i>
-            <span class="text-sm font-medium">YT Downloader</span>
+            <span class="font-semibold">Video Downloader v2.0</span>
         </div>
-        <div class="flex items-center gap-4 no-drag">
+        <div class="flex items-center gap-3 no-drag">
             <button onclick="pywebview.api.minimize_window()" class="text-zinc-500 hover:text-white"><i class="fa-solid fa-minus"></i></button>
             <button onclick="pywebview.api.close_window()" class="text-zinc-500 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>
         </div>
     </div>
 
-    <!-- CONTENT -->
-    <div class="flex flex-1 overflow-hidden">
+    <!-- MAIN CONTENT -->
+    <div class="flex flex-1 overflow-hidden bg-[#0f0f11]">
         <!-- SIDEBAR -->
-        <aside class="w-[360px] bg-zinc-900 flex flex-col border-r border-zinc-800 p-6 gap-5 overflow-y-auto">
-            
-            <!-- Inputs -->
+        <aside class="w-[420px] bg-[#18181b] border-r border-zinc-800 p-6 flex flex-col gap-5 overflow-y-auto">
             <div>
-                <label class="text-xs font-bold text-zinc-500 uppercase mb-2 block">URL</label>
-                <div class="flex gap-2">
-                    <input type="text" id="url-input" placeholder="Paste link..." class="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-sm focus:border-indigo-500 outline-none">
+                <label class="text-xs font-bold text-zinc-500 uppercase mb-2 block">ДЖЕРЕЛО</label>
+                <div class="relative">
+                    <i class="fa-solid fa-link text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                    <input id="url-input" type="text" placeholder="Вставте посилання..." class="w-full bg-[#27272a] border border-zinc-700 rounded-lg py-3 pl-10 pr-3 text-sm text-white focus:border-indigo-500 outline-none">
                 </div>
             </div>
 
             <div>
-                <label class="text-xs font-bold text-zinc-500 uppercase mb-2 block">Save To</label>
-                <div class="flex gap-2">
-                    <input type="text" id="path-input" readonly class="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-sm text-zinc-400 cursor-default">
-                    <button onclick="pywebview.api.select_folder().then(p => { if(p) document.getElementById('path-input').value = p; })" class="bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-white rounded-lg px-3 py-2 transition">
+                <label class="text-xs font-bold text-zinc-500 uppercase mb-2 block">ЗБЕРЕГТИ В</label>
+                <div class="relative flex items-center gap-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-folder text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input id="path-input" type="text" readonly class="w-full bg-[#27272a] border border-zinc-700 rounded-lg py-3 pl-10 pr-3 text-sm text-zinc-400 cursor-default" placeholder="Оберіть папку">
+                    </div>
+                    <button onclick="pywebview.api.select_folder().then(p => { if(p) { document.getElementById('path-input').value = p; } })" class="h-[46px] px-4 bg-[#27272a] border border-zinc-700 rounded-lg text-white hover:border-indigo-500 transition">
                         <i class="fa-solid fa-ellipsis"></i>
                     </button>
                 </div>
             </div>
 
-            <!-- Settings -->
-            <div class="bg-[#202023] p-4 rounded-xl border border-zinc-800 space-y-3">
-                <div class="flex justify-between items-center">
-                    <span class="text-sm">Separate Folder</span>
-                    <input type="checkbox" id="chk-folder" class="accent-indigo-500 w-4 h-4">
+            <div class="bg-[#202023] border border-zinc-800 rounded-2xl p-4 space-y-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-zinc-200">Створити окрему папку</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="chk-folder">
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-sm">Convert to MP4</span>
-                    <input type="checkbox" id="chk-mp4" checked class="accent-indigo-500 w-4 h-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-zinc-200">Конвертувати в MP4</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="chk-mp4" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-zinc-200">Послідовне завантаження</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="chk-queue">
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
             </div>
 
-            <button onclick="initiateDownload()" class="mt-auto w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-indigo-500/20 flex justify-center items-center gap-2">
-                <i class="fa-solid fa-download"></i> Download
+            <div class="bg-[#202023] border border-zinc-800 rounded-2xl overflow-hidden shadow-lg">
+                <div class="h-40 bg-[#1f1f24] relative flex items-center justify-center">
+                    <div class="w-[78%] h-[74%] bg-[#0f0f11] rounded-2xl flex items-center justify-center text-zinc-600 border border-zinc-800">
+                        <i class="fa-brands fa-youtube text-3xl"></i>
+                    </div>
+                    <span class="absolute bottom-3 right-4 text-xs bg-[#0b0b0d] border border-zinc-700 text-white px-2 py-1 rounded-md">14:20</span>
+                </div>
+                <div class="p-4 space-y-3">
+                    <div>
+                        <div class="text-sm font-semibold">Удар по НПЗ: як остаточно виграти війну</div>
+                        <div class="text-xs text-zinc-500">Тривалість: 15 хв</div>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-xs text-zinc-500">
+                            <span>00:00</span>
+                            <span>14:20</span>
+                        </div>
+                        <div class="trim-track">
+                            <div class="trim-fill"></div>
+                            <div class="trim-handle"></div>
+                            <div class="trim-handle"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="initiateDownload()" class="mt-auto w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold py-3 rounded-2xl transition shadow-lg shadow-purple-800/30 flex justify-center items-center gap-2 text-sm">
+                <i class="fa-solid fa-download"></i>
+                Завантажити
             </button>
         </aside>
 
-        <!-- QUEUE -->
-        <main class="flex-1 bg-black flex flex-col p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Queue</h2>
-                <button onclick="clearAll()" class="text-xs text-zinc-500 hover:text-white">Clear All</button>
+        <!-- MAIN PANEL -->
+        <main class="flex-1 bg-[#121212] flex flex-col px-6 py-5 overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold">Черга завантажень</h2>
+                    <span id="queue-count" class="px-2 py-1 rounded-full bg-[#1f1f24] border border-zinc-800 text-xs text-zinc-300">0</span>
+                </div>
+                <button onclick="clearAll()" class="text-xs text-zinc-500 hover:text-white flex items-center gap-1">
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>Очистити історію</span>
+                </button>
             </div>
-            
-            <div id="download-list" class="flex-1 overflow-y-auto space-y-3 pr-2"></div>
+
+            <div id="download-list" class="flex-1 overflow-y-auto space-y-3 pr-1"></div>
         </main>
     </div>
 
+    <!-- STATUS BAR -->
+    <footer class="h-11 bg-[#18181b] border-t border-zinc-800 px-5 flex items-center justify-between text-xs text-zinc-400">
+        <div class="flex items-center gap-3">
+            <span class="flex items-center gap-2 text-green-400"><span class="w-2 h-2 bg-green-400 rounded-full"></span>Готовий</span>
+            <span class="text-zinc-500">Версія 0.2.34</span>
+        </div>
+        <div class="flex items-center gap-4 text-zinc-500">
+            <span>UA</span>
+            <span>Dark Theme</span>
+        </div>
+    </footer>
+
     <script>
         const statusLabels = {
-            downloading: 'Downloading...',
-            converting: 'Converting...',
-            done: 'Completed',
-            cancelled: 'Cancelled',
-            error: 'Error',
-            idle: 'Starting...'
+            downloading: 'Завантаження...',
+            converting: 'Конвертація...',
+            done: 'Завершено',
+            cancelled: 'Скасовано',
+            error: 'Помилка',
+            idle: 'Початок...'
         };
+
+        function updateQueueCount() {
+            const list = document.getElementById('download-list');
+            const count = list.children.length;
+            document.getElementById('queue-count').textContent = count;
+        }
 
         function clearAll() {
             document.getElementById('download-list').innerHTML = '';
+            updateQueueCount();
         }
 
         function initiateDownload() {
@@ -106,126 +181,143 @@
             const path = document.getElementById('path-input').value.trim();
             const mp4 = document.getElementById('chk-mp4').checked;
             const separateFolder = document.getElementById('chk-folder').checked;
-            
-            if(!url) return alert("Please enter a URL");
 
-            pywebview.api.start_download(url, path, {mp4: mp4, separate_folder: separateFolder}).then(res => {
-                if(res.status === 'ok') {
+            if (!url) return alert('Будь ласка, введіть посилання');
+
+            pywebview.api.start_download(url, path, { mp4: mp4, separate_folder: separateFolder }).then(res => {
+                if (res.status === 'ok') {
                     createTaskCard(res.task_id, url);
                     document.getElementById('url-input').value = '';
                 } else {
-                    alert("Error: " + res.error);
+                    alert(res.message || 'Не вдалося ініціювати завантаження');
                 }
             });
         }
 
         function createTaskCard(id, title) {
             const list = document.getElementById('download-list');
-            const html = `
-            <div id="card-${id}" class="bg-[#18181b] p-4 rounded-xl border border-zinc-800 animate-pulse-short">
-                <div class="flex items-center gap-3 mb-3">
-                    <div class="w-10 h-10 rounded bg-zinc-800 flex items-center justify-center text-indigo-500">
-                        <i id="icon-${id}" class="fa-solid fa-video"></i>
+            const card = document.createElement('div');
+            card.id = `card-${id}`;
+            card.className = 'bg-[#18181b] border border-zinc-800 rounded-2xl p-4 shadow-lg transition relative overflow-hidden';
+            card.innerHTML = `
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-full bg-[#24242a] border border-zinc-700 flex items-center justify-center text-indigo-400" id="icon-${id}">
+                        <i class="fa-solid fa-cloud-arrow-down"></i>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <h4 class="text-sm font-medium text-white truncate" id="title-${id}">${title}</h4>
-                        <div class="flex justify-between mt-1">
-                            <span id="status-${id}" class="text-xs text-zinc-400">${statusLabels.idle}</span>
-                            <span id="percent-${id}" class="text-xs text-indigo-400 font-mono">0%</span>
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <h4 class="text-sm font-semibold text-white truncate" id="title-${id}">${title}</h4>
+                                <div class="text-xs text-zinc-500 mt-1" id="status-${id}">${statusLabels.idle}</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button id="open-${id}" onclick="openResult('${id}')" disabled class="px-3 py-2 rounded-xl text-xs border border-zinc-700 text-zinc-500 bg-[#202023] cursor-not-allowed flex items-center gap-2">
+                                    <i class="fa-regular fa-folder-open"></i>
+                                    <span>Папка</span>
+                                </button>
+                                <button id="cancel-${id}" onclick="cancelTask('${id}')" class="w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-300 hover:border-indigo-500">
+                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center mt-2 text-xs text-zinc-500">
+                            <span id="speed-${id}">0%</span>
+                            <span class="font-mono text-indigo-300" id="percent-${id}">0%</span>
                         </div>
                     </div>
                 </div>
-                <div class="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                    <div id="prog-${id}" class="bg-indigo-600 h-full transition-all duration-300" style="width: 0%"></div>
+                <div class="mt-3 w-full bg-[#202023] h-2 rounded-full overflow-hidden">
+                    <div id="prog-${id}" class="h-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-300" style="width: 0%"></div>
                 </div>
-                <div class="flex justify-end gap-2 mt-3">
-                    <button id="open-${id}" onclick="openResult('${id}')" disabled class="px-3 py-2 rounded-lg text-xs bg-zinc-800 border border-zinc-700 text-zinc-400 cursor-not-allowed">Open Folder</button>
-                    <button id="cancel-${id}" onclick="cancelTask('${id}')" class="px-3 py-2 rounded-lg text-xs bg-zinc-800 border border-zinc-700 text-white hover:bg-zinc-700">Cancel</button>
-                </div>
-            </div>`;
-            list.insertAdjacentHTML('afterbegin', html);
+            `;
+            list.insertAdjacentElement('afterbegin', card);
+            updateQueueCount();
         }
 
-        function updateProgress(id, percent) {
+        function updateProgress(id, percent, speedText) {
             const bar = document.getElementById('prog-' + id);
             const label = document.getElementById('percent-' + id);
-            if(bar) bar.style.width = `${Math.min(Math.max(percent, 0), 100)}%`;
-            if(label) label.textContent = `${Math.round(percent)}%`;
+            const speed = document.getElementById('speed-' + id);
+            const value = Math.min(Math.max(percent || 0, 0), 100);
+            if (bar) bar.style.width = `${value}%`;
+            if (label) label.textContent = `${Math.round(value)}%`;
+            if (speed && speedText) speed.textContent = speedText;
         }
 
         function updateStatus(id, statusText) {
             const statusEl = document.getElementById('status-' + id);
-            if(statusEl) statusEl.textContent = statusText;
+            if (statusEl) statusEl.textContent = statusText;
         }
 
-        function setCardState(id, state, info={}) {
+        function setCardState(id, state, info = {}) {
             const card = document.getElementById('card-' + id);
             const icon = document.getElementById('icon-' + id);
             const statusEl = document.getElementById('status-' + id);
             const cancelBtn = document.getElementById('cancel-' + id);
             const openBtn = document.getElementById('open-' + id);
 
-            if(!card) return;
+            if (!card) return;
 
-            card.classList.remove('animate-pulse-short');
-            if(state === 'done') {
+            card.classList.remove('animate-pulse');
+            if (state === 'done') {
                 updateProgress(id, 100);
                 card.classList.remove('border-zinc-800');
                 card.classList.add('border-green-500/40');
-                if(statusEl) statusEl.className = 'text-xs text-green-500';
-                if(icon) icon.className = 'fa-solid fa-circle-check text-green-500';
-                if(openBtn) {
+                if (statusEl) statusEl.className = 'text-xs text-green-400';
+                if (statusEl) statusEl.textContent = statusLabels.done;
+                if (icon) icon.innerHTML = '<i class="fa-solid fa-circle-check text-green-500"></i>';
+                if (openBtn) {
                     openBtn.disabled = false;
                     openBtn.dataset.path = info.path || '';
-                    openBtn.classList.remove('cursor-not-allowed', 'text-zinc-400');
+                    openBtn.classList.remove('cursor-not-allowed', 'text-zinc-500');
                     openBtn.classList.add('text-white', 'border-green-500/40');
                 }
-                if(cancelBtn) {
+                if (cancelBtn) {
                     cancelBtn.disabled = true;
                     cancelBtn.classList.add('opacity-50', 'cursor-not-allowed');
                 }
-            } else if(state === 'error') {
+            } else if (state === 'error') {
                 card.classList.remove('border-zinc-800');
                 card.classList.add('border-red-500/40');
-                if(statusEl) {
+                if (statusEl) {
                     statusEl.className = 'text-xs text-red-400';
                     statusEl.textContent = info.message || statusLabels.error;
                 }
-                if(icon) icon.className = 'fa-solid fa-circle-exclamation text-red-400';
-                if(cancelBtn) {
+                if (icon) icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-400"></i>';
+                if (cancelBtn) {
                     cancelBtn.disabled = true;
                     cancelBtn.classList.add('opacity-50', 'cursor-not-allowed');
                 }
-            } else if(state === 'cancelled') {
-                if(statusEl) statusEl.textContent = statusLabels.cancelled;
-                if(icon) icon.className = 'fa-solid fa-ban text-zinc-400';
-                if(cancelBtn) cancelBtn.disabled = true;
+            } else if (state === 'cancelled') {
+                if (statusEl) statusEl.textContent = statusLabels.cancelled;
+                if (icon) icon.innerHTML = '<i class="fa-solid fa-ban text-zinc-400"></i>';
+                if (cancelBtn) cancelBtn.disabled = true;
             }
         }
 
         function handlePyEvent(data) {
-            if(!data || !data.task_id) return;
-            if(data.type === 'title') {
+            if (!data || !data.task_id) return;
+            if (data.type === 'title') {
                 const el = document.getElementById('title-' + data.task_id);
-                if(el) el.innerText = data.title;
+                if (el) el.innerText = data.title;
             }
-            if(data.type === 'status') {
+            if (data.type === 'status') {
                 const label = statusLabels[data.status] || data.status;
                 updateStatus(data.task_id, label);
             }
-            if(data.type === 'progress') {
-                updateProgress(data.task_id, data.progress || 0);
-                if(data.status) updateStatus(data.task_id, statusLabels[data.status] || data.status);
+            if (data.type === 'progress') {
+                updateProgress(data.task_id, data.progress || 0, data.speed);
+                if (data.status) updateStatus(data.task_id, statusLabels[data.status] || data.status);
             }
-            if(data.type === 'done') {
+            if (data.type === 'done') {
                 updateStatus(data.task_id, statusLabels.done);
-                setCardState(data.task_id, 'done', {path: data.path});
+                setCardState(data.task_id, 'done', { path: data.path });
             }
-            if(data.type === 'error') {
-                setCardState(data.task_id, 'error', {message: data.error || 'Error'});
+            if (data.type === 'error') {
+                setCardState(data.task_id, 'error', { message: data.error || statusLabels.error });
             }
-            if(data.type === 'finished') {
-                if(data.cancelled) {
+            if (data.type === 'finished') {
+                if (data.cancelled) {
                     setCardState(data.task_id, 'cancelled');
                 }
             }
@@ -233,18 +325,18 @@
 
         function openResult(id) {
             const btn = document.getElementById('open-' + id);
-            if(!btn || btn.disabled) return;
+            if (!btn || btn.disabled) return;
             const targetPath = btn.dataset.path;
-            if(targetPath) {
+            if (targetPath) {
                 pywebview.api.open_path(targetPath);
             }
         }
 
         function cancelTask(id) {
             const btn = document.getElementById('cancel-' + id);
-            if(btn) btn.disabled = true;
+            if (btn) btn.disabled = true;
             pywebview.api.cancel_download(id).then(res => {
-                if(res.status !== 'ok' && btn) btn.disabled = false;
+                if (res.status !== 'ok' && btn) btn.disabled = false;
             });
         }
     </script>
