@@ -193,7 +193,9 @@ class Bridge:
             return {"status": "error", "error": "Invalid URL"}
 
         task_id = str(uuid.uuid4())
-        root_folder = Path(self.root_folder)
+        root_folder_path = Path(self.root_folder)
+        root_folder_str = str(root_folder_path)
+        self._ensure_root_folder(root_folder_path)
         separate_folder = False
         convert_to_mp4 = bool(options.get("mp4", self.settings.get("mp4", True)))
         sequential_download = bool(options.get("sequential", self.settings.get("sequential", False)))
@@ -203,13 +205,13 @@ class Bridge:
 
         self.settings["mp4"] = convert_to_mp4
         self.settings["sequential"] = sequential_download
-        self.settings["root_folder"] = str(root_folder)
+        self.settings["root_folder"] = root_folder_str
         self._save_settings()
 
         worker_args = {
             "task_id": task_id,
             "url": url,
-            "root": root_folder,
+            "root": root_folder_str,
             "title": title,
             "separate_folder": separate_folder,
             "convert_to_mp4": convert_to_mp4,
@@ -245,10 +247,11 @@ class Bridge:
         return {"status": "ok", "task_id": task_id}
 
     def _start_worker(self, worker_args: dict[str, Any]) -> DownloadWorker:
+        root_path = Path(worker_args["root"])
         worker = DownloadWorker(
             task_id=worker_args["task_id"],
             url=worker_args["url"],
-            root=worker_args["root"],
+            root=root_path,
             title=worker_args.get("title"),
             separate_folder=worker_args.get("separate_folder", False),
             convert_to_mp4=bool(worker_args.get("convert_to_mp4", True)),
