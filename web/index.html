@@ -36,6 +36,22 @@
         }
 
         .progress-shimmer { background-size: 200% 100%; animation: shimmer 2s ease-in-out infinite; }
+
+        /* BUTTONS */
+        .action-icon-btn { width: 2.5rem; height: 2.5rem; border-radius: 0.75rem; background: #202023; border: 1px solid #3f3f46; color: #d4d4d8; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .action-icon-btn:hover { border-color: #6366f1; color: #e5e7eb; }
+        .action-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* STATES */
+        .border-active { border-color: #eab308 !important; animation: pulse-border 2s infinite; }
+        .border-queued { border-color: #f97316 !important; }
+        .card-cancelled { opacity: 0.6; filter: grayscale(100%); pointer-events: none; }
+
+        @keyframes pulse-border {
+            0% { border-color: #a16207; }
+            50% { border-color: #facc15; }
+            100% { border-color: #a16207; }
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden border border-zinc-800 rounded-2xl">
@@ -78,7 +94,7 @@
                         <i class="fa-solid fa-folder text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
                         <input id="path-input" type="text" readonly class="w-full bg-[#27272a] border border-zinc-700 rounded-lg py-3 pl-10 pr-3 text-sm text-zinc-400 cursor-default" placeholder="Оберіть папку">
                     </div>
-                    <button onclick="chooseFolder()" class="h-[46px] px-4 bg-[#27272a] border border-zinc-700 rounded-lg text-white hover:border-indigo-500 transition">
+                    <button id="btn-folder" onclick="chooseFolder()" class="action-icon-btn" title="Оберіть папку">
                         <i class="fa-solid fa-ellipsis"></i>
                     </button>
                 </div>
@@ -234,6 +250,9 @@
         let currentMetadata = null;
         let trimSlider = null;
         const updateState = { status: 'checking', availableVersion: null };
+        const ICON_BUTTON_CLASS = 'action-icon-btn';
+        const PROGRESS_BASE_CLASS = 'h-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-300';
+        const PROGRESS_CANCELLED_CLASS = 'h-full bg-zinc-600 transition-all duration-300';
 
         function formatTime(seconds) {
             const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -607,7 +626,7 @@
                     </div>
                 </div>
                 <div class="mt-3 w-full bg-[#202023] h-2 rounded-full overflow-hidden">
-                    <div id="prog-${task.id}" class="h-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-300" style="width: 0%"></div>
+                    <div id="prog-${task.id}" class="${PROGRESS_BASE_CLASS}" style="width: 0%"></div>
                 </div>
             `;
             list.insertAdjacentElement('afterbegin', card);
@@ -617,10 +636,12 @@
             const bar = document.getElementById('prog-' + id);
             const label = document.getElementById('percent-' + id);
             const speed = document.getElementById('speed-' + id);
-            const value = Math.min(Math.max(Number(percent ?? 0) || 0, 0), 100);
+            const numeric = Number(percent);
+            const value = Number.isFinite(numeric) ? Math.min(Math.max(numeric, 0), 100) : 0;
+
             if (bar) bar.style.width = `${value}%`;
             if (label) label.textContent = `${Math.round(value)}%`;
-            if (speed && speedText) speed.textContent = speedText;
+            if (speed) speed.textContent = speedText ?? '';
         }
 
         function setCardState(task) {
@@ -628,11 +649,13 @@
             const card = document.getElementById('card-' + id);
             const icon = document.getElementById('icon-' + id);
             const statusEl = document.getElementById('status-' + id);
+            const bar = document.getElementById('prog-' + id);
             if (!card) return;
 
-            card.classList.remove('opacity-50', 'pointer-events-none', 'grayscale');
-            card.classList.remove('border-green-500/40', 'border-red-500/40');
+            card.classList.remove('card-cancelled', 'opacity-50', 'pointer-events-none', 'grayscale');
+            card.classList.remove('border-green-500/40', 'border-red-500/40', 'border-amber-400/50', 'border-active', 'border-queued');
             if (statusEl) statusEl.className = 'text-xs text-zinc-500 mt-1';
+            if (bar) bar.className = PROGRESS_BASE_CLASS;
 
             if (task.status === 'done') {
                 updateProgress(id, 100);
@@ -650,10 +673,13 @@
                 }
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-400"></i>';
             } else if (task.status === 'cancelled') {
+                card.classList.add('card-cancelled');
+                updateProgress(id, 100);
+                if (bar) bar.className = PROGRESS_CANCELLED_CLASS;
                 if (statusEl) statusEl.textContent = statusLabels.cancelled;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-ban text-zinc-400"></i>';
             } else if (task.status === 'queued') {
-                card.classList.add('border-amber-400/50');
+                card.classList.add('border-queued');
                 if (statusEl) {
                     statusEl.className = 'text-xs text-amber-300 mt-1';
                     statusEl.textContent = statusLabels.queued;
@@ -662,6 +688,10 @@
             } else {
                 if (statusEl) statusEl.textContent = statusLabels[task.status] || statusLabels.idle;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i>';
+            }
+
+            if (['downloading', 'converting'].includes(task.status)) {
+                card.classList.add('border-active');
             }
 
             updateActions(task);
@@ -839,8 +869,11 @@
 
         function cancelTask(id) {
             const card = document.getElementById('card-' + id);
-            if (card) {
-                card.classList.add('opacity-50', 'pointer-events-none', 'grayscale');
+            const bar = document.getElementById('prog-' + id);
+            if (card) card.classList.add('card-cancelled');
+            if (bar) {
+                bar.className = PROGRESS_CANCELLED_CLASS;
+                bar.style.width = '100%';
             }
             pywebview.api.cancel_download(id);
         }
@@ -877,7 +910,7 @@
 
         function createIconButton(iconClass, handler, options = {}) {
             const btn = document.createElement('button');
-            btn.className = `w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-300 hover:border-indigo-500 flex items-center justify-center ${options.extraClasses || ''}`;
+            btn.className = `${ICON_BUTTON_CLASS} ${options.extraClasses || ''}`;
             btn.innerHTML = `<i class="${iconClass}"></i>`;
             if (options.title) btn.title = options.title;
             btn.onclick = handler;
