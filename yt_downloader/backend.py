@@ -8,7 +8,9 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
+
+from .logger import get_logger
 
 __all__ = [
     "BackendError",
@@ -40,27 +42,37 @@ def _ensure_yt_dlp() -> _YtDlpContext:
     return _YtDlpContext(module=yt_dlp)
 
 
-class _SilentLogger:
-    """A ``yt_dlp`` compatible logger that suppresses console output."""
+class _FileLogger:
+    """A ``yt_dlp`` compatible logger that forwards messages to the app logger."""
 
-    def debug(self, *_: object, **__: object) -> None:  # noqa: D401 - tiny helper
-        """Ignore debug messages."""
+    def __init__(self) -> None:
+        self._logger = LOGGER
 
-    def info(self, *_: object, **__: object) -> None:  # noqa: D401 - tiny helper
-        """Ignore info messages."""
+    def debug(self, message: str) -> None:  # noqa: D401 - tiny helper
+        """Log debug messages."""
 
-    def warning(self, *_: object, **__: object) -> None:  # noqa: D401 - tiny helper
-        """Ignore warnings."""
+        self._logger.debug(str(message))
+
+    def info(self, message: str) -> None:  # noqa: D401 - tiny helper
+        """Log info messages."""
+
+        self._logger.info(str(message))
+
+    def warning(self, message: str) -> None:  # noqa: D401 - tiny helper
+        """Log warnings."""
+
+        self._logger.warning(str(message))
 
     def error(self, message: str) -> None:
-        raise RuntimeError(message)
+        self._logger.error(str(message))
 
 
 def _build_base_options() -> Dict[str, Any]:
     return {
-        "quiet": True,
-        "no_warnings": True,
-        "logger": _SilentLogger(),
+        "quiet": False,
+        "no_warnings": False,
+        "verbose": True,
+        "logger": _FileLogger(),
     }
 
 
@@ -99,8 +111,8 @@ def download_video(
             "temp": str(tempdir),
         },
         "outtmpl": "source.%(ext)s",
-        "format": "bv*+ba/b",
-        "format_sort": ["res", "fps", "br"],
+        "format": "bestvideo*+bestaudio/best",  # Allow fallback when split streams are unavailable
+        "format_sort": ["res:1080", "fps", "br"],
         "concurrent_fragment_downloads": 8,
         "hls_prefer_ffmpeg": True,
         "noprogress": True,
@@ -190,3 +202,5 @@ def _fetch_video_metadata_subprocess(url: str) -> Dict[str, Any]:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise BackendError("Failed to decode yt-dlp output.") from exc
+LOGGER = get_logger("yt_dlp")
+

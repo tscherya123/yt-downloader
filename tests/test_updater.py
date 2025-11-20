@@ -1,147 +1,68 @@
-from __future__ import annotations
-
-import os
-import tempfile
+import subprocess
 import sys
 from pathlib import Path
 
-from yt_downloader.updater import (
-    build_updater_command,
-    maybe_run_updater,
-    run_updater,
-)
+import pytest
+
+from yt_downloader.updater import cleanup_old_versions, install_update_and_restart
 
 
-def test_build_updater_command_contains_expected_arguments(tmp_path) -> None:
-    source = tmp_path / "source.exe"
-    target = tmp_path / "target.exe"
-    log_path = tmp_path / "update.log"
-    relaunch_helper = tmp_path / "relauncher.exe"
-    command = build_updater_command(
-        source,
-        target,
-        target,
-        ["--foo", "bar"],
-        log_path,
-        wait_before=0.25,
-        max_wait=12.5,
-        relaunch_helper=relaunch_helper,
-        relaunch_wait=0.75,
-    )
-    assert command[0] == str(Path(sys.executable))
-    assert command[1] == "--run-updater"
-    assert "--source" in command
-    assert "--target" in command
-    assert "--launch" in command
-    assert "--launch-args-json" in command
-    assert "--log-file" in command
-    assert "0.25" in command
-    assert "12.5" in command
-    assert "--relaunch-helper" in command
-    assert "--relaunch-wait" in command
+def test_install_update_replaces_executable_without_restart(monkeypatch, tmp_path) -> None:
+    current = tmp_path / "app.exe"
+    replacement = tmp_path / "new.exe"
+    current.write_text("old-version")
+    replacement.write_text("new-version")
+
+    monkeypatch.setattr(sys, "executable", str(current))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()))
+
+    install_update_and_restart(replacement, restart=False)
+
+    assert current.read_text() == "new-version"
+    backup = current.with_suffix(current.suffix + ".old")
+    assert backup.read_text() == "old-version"
 
 
-def test_run_updater_replaces_file(tmp_path) -> None:
-    source = tmp_path / "new.exe"
-    target = tmp_path / "app.exe"
-    source.write_text("new-version")
-    target.write_text("old-version")
+def test_install_update_restarts_application(monkeypatch, tmp_path) -> None:
+    current = tmp_path / "app.exe"
+    replacement = tmp_path / "new.exe"
+    current.write_text("old-version")
+    replacement.write_text("new-version")
 
-    exit_code = run_updater(
-        source=source,
-        target=target,
-        launch_path=None,
-        launch_args=None,
-        log_file=None,
-        wait_before=0.0,
-        max_wait=1.0,
-    )
-    assert exit_code == 0
-    assert target.read_text() == "new-version"
-
-
-def test_run_updater_launches_with_expected_parameters(monkeypatch, tmp_path) -> None:
-    source = tmp_path / "new.exe"
-    target = tmp_path / "app.exe"
-    source.write_text("new-version")
-    target.write_text("old-version")
+    monkeypatch.setattr(sys, "executable", str(current))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
 
     captured: dict[str, object] = {}
 
     def fake_popen(cmd, **kwargs):  # type: ignore[no-untyped-def]
         captured["cmd"] = cmd
         captured["kwargs"] = kwargs
+        return object()
 
-        class _Proc:  # pragma: no cover - behavior doesn't matter
-            pass
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
-        return _Proc()
+    with pytest.raises(SystemExit):
+        install_update_and_restart(replacement)
 
-    monkeypatch.setattr("subprocess.Popen", fake_popen)
-
-    exit_code = run_updater(
-        source=source,
-        target=target,
-        launch_path=target,
-        launch_args=["--foo"],
-        log_file=None,
-        wait_before=0.0,
-        max_wait=1.0,
-        relaunch_helper=None,
-    )
-
-    assert exit_code == 0
-    assert target.read_text() == "new-version"
-    assert captured["cmd"] == [str(target), "--foo"]
+    assert current.read_text() == "new-version"
+    assert captured["cmd"][0] == str(current)
     kwargs = captured["kwargs"]
-    assert kwargs["cwd"] == str(Path(tempfile.gettempdir()))
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["stdout"] is subprocess.DEVNULL
+    assert kwargs["stderr"] is subprocess.DEVNULL
     assert kwargs["close_fds"] is True
-    if os.name == "nt":
-        assert kwargs.get("creationflags", 0)
 
 
-def test_run_updater_uses_relaunch_helper(monkeypatch, tmp_path) -> None:
-    source = tmp_path / "new.exe"
-    target = tmp_path / "app.exe"
-    source.write_text("new-version")
-    target.write_text("old-version")
-    helper = tmp_path / "helper.exe"
-    helper.write_text("helper")
+def test_cleanup_old_versions_removes_backups(monkeypatch, tmp_path) -> None:
+    executable = tmp_path / "app.exe"
+    backup = executable.with_suffix(executable.suffix + ".old")
+    executable.write_text("current")
+    backup.write_text("old")
 
-    calls: list[tuple[list[str], dict[str, object]]] = []
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
 
-    def fake_popen(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        calls.append((cmd, kwargs))
+    cleanup_old_versions()
 
-        class _Proc:  # pragma: no cover - behavior doesn't matter
-            pass
-
-        return _Proc()
-
-    monkeypatch.setattr("subprocess.Popen", fake_popen)
-
-    exit_code = run_updater(
-        source=source,
-        target=target,
-        launch_path=target,
-        launch_args=["--foo"],
-        log_file=None,
-        wait_before=0.0,
-        max_wait=1.0,
-        relaunch_helper=helper,
-        relaunch_wait=0.25,
-    )
-
-    assert exit_code == 0
-    assert len(calls) == 1
-    cmd, kwargs = calls[0]
-    assert cmd[0] == str(Path(tempfile.gettempdir()) / helper.name)
-    assert "--target" in cmd
-    assert "--wait" in cmd
-    assert "0.25" in cmd
-    if os.name == "nt":
-        assert kwargs.get("creationflags", 0)
-
-
-def test_maybe_run_updater_no_flag_returns_none() -> None:
-    assert maybe_run_updater(["--other", "value"]) is None
+    assert not backup.exists()
