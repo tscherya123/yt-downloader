@@ -104,7 +104,7 @@ jobs:
         run: |
           pyinstaller --onefile --noconsole ui.py -n yt-downloader --hidden-import=yt_dlp `
             --icon "yt-dw-logo.ico" `
-            --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;."
+            --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;." --add-data "web;web"
           pyinstaller --onefile --noconsole yt_downloader/relauncher.py -n yt-downloader-relauncher `
             --icon "yt-dw-logo.ico"
 
