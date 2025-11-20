@@ -33,6 +33,10 @@ from yt_downloader.worker import DownloadWorker
 class Bridge:
     """JavaScript API exposed to the web frontend."""
 
+    CONFIG_DIR = Path.home() / "Documents" / "YT Downloader Settings"
+    SETTINGS_FILE = CONFIG_DIR / "settings.json"
+    DEFAULT_ROOT = Path.home() / "Videos" / "Downloaded Videos"
+
     def __init__(self, window: Optional["webview.Window"] = None) -> None:
         self.window = window
         self.event_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
@@ -44,10 +48,19 @@ class Bridge:
         self._monitor_thread.start()
         self._lock = threading.Lock()
 
+        self.settings = self._load_settings()
+        self.root_folder = Path(self.settings.get("root_folder", self.DEFAULT_ROOT)).expanduser()
+        self._ensure_root_folder(self.root_folder)
+
     def get_init_data(self) -> dict[str, str]:
         """Return static data used to initialize the UI."""
 
-        return {"version": __version__}
+        return {
+            "version": __version__,
+            "root_folder": str(self.root_folder),
+            "convert_mp4": bool(self.settings.get("convert_mp4", True)),
+            "sequential": bool(self.settings.get("sequential", False)),
+        }
 
     def fetch_metadata(self, url: str) -> dict[str, Any]:
         """Fetch video metadata for the given URL."""
@@ -107,8 +120,17 @@ class Bridge:
             return ""
 
         if isinstance(result, (list, tuple)):
-            return str(result[0])
-        return str(result)
+            selected = str(result[0])
+        else:
+            selected = str(result)
+
+        if selected:
+            self.root_folder = Path(selected).expanduser()
+            self._ensure_root_folder(self.root_folder)
+            self.settings["root_folder"] = str(self.root_folder)
+            self._save_settings()
+
+        return selected
 
     def start_download(
         self,
@@ -124,8 +146,8 @@ class Bridge:
             return {"status": "error", "error": "Invalid URL"}
 
         task_id = str(uuid.uuid4())
-        root_folder = Path(folder).expanduser() if folder else Path.home() / "Downloads"
-        separate_folder = bool(options.get("separate_folder"))
+        root_folder = self.root_folder
+        separate_folder = False
         convert_to_mp4 = bool(options.get("mp4", True))
         start_seconds = float(options.get("start_seconds", 0.0) or 0.0)
         end_seconds_value = options.get("end_seconds")
@@ -217,6 +239,62 @@ class Bridge:
                 except Exception:
                     continue
 
+    def _load_settings(self) -> dict[str, Any]:
+        """Load persisted settings or return defaults if missing."""
+
+        self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        default_root = self.DEFAULT_ROOT
+        self._ensure_root_folder(default_root)
+        defaults = {
+            "root_folder": str(default_root),
+            "convert_mp4": True,
+            "sequential": False,
+        }
+
+        if not self.SETTINGS_FILE.exists():
+            self._save_settings_data(defaults)
+            return defaults
+
+        try:
+            loaded: dict[str, Any] = json.loads(
+                self.SETTINGS_FILE.read_text(encoding="utf-8")
+            )
+        except Exception:
+            self._save_settings_data(defaults)
+            return defaults
+
+        if not isinstance(loaded, dict):
+            self._save_settings_data(defaults)
+            return defaults
+
+        merged = {**defaults, **loaded}
+        merged["root_folder"] = str(
+            Path(merged.get("root_folder", default_root)).expanduser()
+        )
+        self._ensure_root_folder(Path(merged["root_folder"]))
+        self._save_settings_data(merged)
+        return merged
+
+    def _save_settings(self) -> None:
+        """Persist current settings to disk."""
+
+        self._save_settings_data(self.settings)
+
+    def _save_settings_data(self, data: dict[str, Any]) -> None:
+        try:
+            self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            self.SETTINGS_FILE.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            return
+
+    def _ensure_root_folder(self, folder: Path) -> None:
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+
 
 def _resolve_web_path() -> str:
     html_path = resolve_asset_path("web/index.html")
@@ -236,7 +314,7 @@ def main() -> None:
         "YT Downloader",
         html_uri,
         width=1200,
-        height=760,
+        height=850,
         min_size=(960, 640),
         js_api=bridge,
     )
