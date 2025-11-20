@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from .logger import get_logger
+from .utils import resolve_executable
 
 __all__ = [
     "BackendError",
@@ -76,6 +78,23 @@ def _build_base_options() -> Dict[str, Any]:
     }
 
 
+def _setup_environment() -> None:
+    """Ensure bundled runtimes are discoverable by ``yt-dlp``.
+
+    Adds the folder containing ``qjs.exe`` and ``ffmpeg.exe`` to ``PATH`` so
+    the dependencies are available without global installation.
+    """
+
+    for tool in ["qjs.exe", "ffmpeg.exe"]:
+        path = resolve_executable(tool)
+        if not path:
+            continue
+
+        folder = str(path.parent)
+        if folder not in os.environ["PATH"]:
+            os.environ["PATH"] = folder + os.pathsep + os.environ["PATH"]
+
+
 def fetch_video_metadata(url: str) -> Dict[str, Any]:
     """Return the metadata for ``url`` using the ``yt_dlp`` Python API."""
 
@@ -102,6 +121,7 @@ def download_video(
 ) -> Path:
     """Download ``url`` into ``workdir`` and return the resulting file path."""
 
+    _setup_environment()
     context = _ensure_yt_dlp()
     base_options = _build_base_options()
     options: Dict[str, Any] = {
@@ -118,8 +138,8 @@ def download_video(
         "noprogress": True,
         "extractor_args": {
             "youtube": {
-                # 'web' client supports 4K and works with QuickJS
-                "player_client": ["web"],
+                # "web" client supports 4K and works with QuickJS
+                "player_client": ["web", "tv"],
             }
         },
     }
