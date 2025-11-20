@@ -82,14 +82,23 @@ class DownloadWorker(threading.Thread):
                     except (TypeError, ValueError):
                         progress_value = 0.0
 
+                    if progress_value <= 0:
+                        try:
+                            fragment_index = float(d.get("fragment_index") or 0)
+                            fragment_count = float(d.get("fragment_count") or 0)
+                            if fragment_index > 0 and fragment_count > 0:
+                                progress_value = min((fragment_index / fragment_count) * 100, 100.0)
+                        except (TypeError, ValueError):
+                            progress_value = 0.0
+
                     speed_display = "-"
-                    try:
-                        speed_value = d.get("speed")
-                        if speed_value:
+                    speed_value = d.get("speed")
+                    if speed_value is not None:
+                        try:
                             speed_mib = float(speed_value) / 1024 / 1024
                             speed_display = f"{speed_mib:.1f} MiB/s"
-                    except (TypeError, ValueError):
-                        pass
+                        except (TypeError, ValueError):
+                            pass
 
                     self._emit(
                         "progress",
