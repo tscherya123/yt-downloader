@@ -26,10 +26,9 @@
 
         /* RANGE PREVIEW */
         .trim-track { position: relative; height: 6px; background: #1f1f24; border-radius: 999px; }
-        .trim-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #4f46e5, #8b5cf6); border-radius: 999px; left: 0%; right: 0%; }
-        .trim-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 18px; height: 18px; background: white; border-radius: 999px; border: 3px solid #6366f1; box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
-        .trim-handle:first-child { left: 0%; }
-        .trim-handle:last-child { right: 0%; transform: translate(50%, -50%); }
+        .trim-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #4f46e5, #8b5cf6); border-radius: 999px; left: 0%; width: 100%; top: 0; }
+        .trim-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 18px; height: 18px; background: white; border-radius: 999px; border: 3px solid #6366f1; box-shadow: 0 6px 16px rgba(0,0,0,0.45); cursor: pointer; z-index: 10; }
+        .trim-handle.active { cursor: grabbing; }
     </style>
 </head>
 <body class="h-screen min-h-[920px] flex flex-col border border-zinc-800 rounded-2xl overflow-hidden">
@@ -114,13 +113,15 @@
                         </div>
                         <div class="space-y-2">
                             <div class="flex justify-between text-xs text-zinc-500">
-                                <span>00:00</span>
-                                <span id="preview-end">--:--</span>
+                                <span id="time-start-label">00:00</span>
+                                <span id="time-end-label">--:--</span>
                             </div>
-                            <div class="trim-track">
-                                <div class="trim-fill"></div>
-                                <span class="trim-handle"></span>
-                                <span class="trim-handle"></span>
+                            <div id="trim-slider" class="relative">
+                                <div id="trim-track" class="trim-track">
+                                    <div id="trim-fill" class="trim-fill"></div>
+                                    <span id="handle-start" class="trim-handle"></span>
+                                    <span id="handle-end" class="trim-handle"></span>
+                                </div>
                             </div>
                             <div class="flex justify-between text-xs text-zinc-500">
                                 <span>Початок</span>
@@ -186,6 +187,118 @@
         const tasks = new Map();
         const settingsState = { root_folder: '', mp4: true, sequential: false };
         let currentMetadata = null;
+        let trimSlider = null;
+
+        function formatTime(seconds) {
+            const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+            const hrs = Math.floor(totalSeconds / 3600);
+            const mins = Math.floor((totalSeconds % 3600) / 60);
+            const secs = totalSeconds % 60;
+
+            const baseTime = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            if (hrs > 0) {
+                return `${hrs}:${baseTime}`;
+            }
+            return baseTime;
+        }
+
+        class VideoSlider {
+            constructor() {
+                this.slider = document.getElementById('trim-slider');
+                this.track = document.getElementById('trim-track');
+                this.fill = document.getElementById('trim-fill');
+                this.handleStart = document.getElementById('handle-start');
+                this.handleEnd = document.getElementById('handle-end');
+                this.duration = 0;
+                this.start = 0;
+                this.end = 0;
+                this.activeHandle = null;
+                this.minGapSeconds = 0.25;
+
+                if (this.handleStart && this.handleEnd) {
+                    ['mousedown', 'touchstart'].forEach(evt => {
+                        this.handleStart.addEventListener(evt, (e) => this.startDrag(e, 'start'));
+                        this.handleEnd.addEventListener(evt, (e) => this.startDrag(e, 'end'));
+                    });
+                    ['mousemove', 'touchmove'].forEach(evt => document.addEventListener(evt, (e) => this.onDrag(e)));
+                    ['mouseup', 'touchend', 'touchcancel'].forEach(evt => document.addEventListener(evt, () => this.stopDrag()));
+                }
+
+                this.updateUI();
+            }
+
+            init(durationSeconds) {
+                this.duration = Math.max(0, Number(durationSeconds) || 0);
+                this.start = 0;
+                this.end = this.duration;
+                this.updateUI();
+            }
+
+            reset() {
+                this.duration = 0;
+                this.start = 0;
+                this.end = 0;
+                this.updateUI();
+            }
+
+            startDrag(event, handle) {
+                if (!this.track || this.duration <= 0) return;
+                event.preventDefault();
+                this.activeHandle = handle;
+                if (handle === 'start' && this.handleStart) this.handleStart.classList.add('active');
+                if (handle === 'end' && this.handleEnd) this.handleEnd.classList.add('active');
+                this.onDrag(event);
+            }
+
+            onDrag(event) {
+                if (!this.activeHandle || !this.track || this.duration <= 0) return;
+                const clientX = event.touches?.[0]?.clientX ?? event.clientX;
+                const rect = this.track.getBoundingClientRect();
+                const rawPercent = (clientX - rect.left) / rect.width;
+                const clampedPercent = Math.min(1, Math.max(0, rawPercent));
+                const seconds = clampedPercent * this.duration;
+
+                if (this.activeHandle === 'start') {
+                    this.start = Math.min(seconds, this.end - this.minGapSeconds);
+                    this.start = Math.max(0, this.start);
+                } else if (this.activeHandle === 'end') {
+                    this.end = Math.max(seconds, this.start + this.minGapSeconds);
+                    this.end = Math.min(this.duration, this.end);
+                }
+
+                this.updateUI();
+            }
+
+            stopDrag() {
+                this.activeHandle = null;
+                if (this.handleStart) this.handleStart.classList.remove('active');
+                if (this.handleEnd) this.handleEnd.classList.remove('active');
+            }
+
+            updateUI() {
+                if (!this.slider || !this.track || !this.fill || !this.handleStart || !this.handleEnd) return;
+
+                const startPercent = this.duration > 0 ? (this.start / this.duration) * 100 : 0;
+                const endPercent = this.duration > 0 ? (this.end / this.duration) * 100 : 100;
+                const left = Math.min(startPercent, endPercent);
+                const width = Math.max(endPercent - startPercent, 0);
+
+                this.handleStart.style.left = `${startPercent}%`;
+                this.handleEnd.style.left = `${endPercent}%`;
+                this.fill.style.left = `${left}%`;
+                this.fill.style.width = `${width}%`;
+
+                const startLabel = document.getElementById('time-start-label');
+                const endLabel = document.getElementById('time-end-label');
+
+                if (startLabel) startLabel.textContent = formatTime(this.start);
+                if (endLabel) endLabel.textContent = this.duration > 0 ? formatTime(this.end) : '--:--';
+            }
+
+            getSelection() {
+                return { start: this.start, end: this.end, duration: this.duration };
+            }
+        }
 
         window.onload = function() {
             resetPreview();
@@ -195,6 +308,8 @@
                     closeAllMenus();
                 }
             });
+
+            trimSlider = new VideoSlider();
 
             const mp4Toggle = document.getElementById('chk-mp4');
             const queueToggle = document.getElementById('chk-queue');
@@ -275,7 +390,7 @@
 
             const titleEl = document.getElementById('preview-title');
             const durationEl = document.getElementById('preview-duration');
-            const endEl = document.getElementById('preview-end');
+            const endEl = document.getElementById('time-end-label');
             const thumb = document.getElementById('preview-thumb');
 
             if (titleEl) titleEl.textContent = '';
@@ -283,6 +398,7 @@
             if (endEl) endEl.textContent = '--:--';
             if (thumb) thumb.src = '';
 
+            if (trimSlider) trimSlider.reset();
             setDownloadButtonDisabled(true);
         }
 
@@ -326,13 +442,16 @@
 
             const titleEl = document.getElementById('preview-title');
             const durationEl = document.getElementById('preview-duration');
-            const endEl = document.getElementById('preview-end');
+            const endEl = document.getElementById('time-end-label');
             const thumb = document.getElementById('preview-thumb');
+            const durationSeconds = Number(meta.duration) || 0;
 
             if (titleEl) titleEl.textContent = meta.title || 'Без назви';
             if (durationEl) durationEl.textContent = meta.duration_str || '00:00';
-            if (endEl) endEl.textContent = meta.duration_str || '00:00';
+            if (endEl) endEl.textContent = meta.duration_str || formatTime(durationSeconds);
             if (thumb) thumb.src = meta.thumbnail || '';
+
+            if (trimSlider) trimSlider.init(durationSeconds);
         }
 
         function updateQueueCount() {
@@ -348,11 +467,15 @@
             const path = document.getElementById('path-input').value.trim();
             const mp4 = document.getElementById('chk-mp4').checked;
 
+            const selection = trimSlider?.getSelection?.();
+            const startSeconds = selection && selection.duration > 0 ? selection.start : 0;
+            const endSeconds = selection && selection.duration > 0 ? selection.end : (currentMetadata?.duration || 0);
+
             if (!url) return alert('Будь ласка, введіть посилання');
 
             const titleHint = (currentMetadata && currentMetadata.title) || document.getElementById('preview-title').textContent.trim();
 
-            pywebview.api.start_download(url, path, { mp4: mp4, sequential: settingsState.sequential }, titleHint).then(res => {
+            pywebview.api.start_download(url, path, { mp4: mp4, sequential: settingsState.sequential, start_seconds: startSeconds, end_seconds: endSeconds }, titleHint).then(res => {
                 if (res.status === 'ok') {
                     const label = titleHint || url;
                     registerTask({ id: res.task_id, title: label, url, status: 'downloading', path: '', error: '' });
