@@ -1408,7 +1408,7 @@ class DownloaderUI(DownloaderApp):
         highlight = colors.get("highlight", surface)
 
         if background:
-            self.configure(fg_color=background)
+            self.configure(fg_color=background, bg_color=background)
         frame_color = surface or background
         for frame_name in (
             "root_container",
@@ -1424,7 +1424,7 @@ class DownloaderUI(DownloaderApp):
         ):
             frame = getattr(self, frame_name, None)
             if frame is not None and frame_color is not None:
-                frame.configure(fg_color=frame_color)
+                frame.configure(fg_color=frame_color, bg_color=background)
 
         label_targets = (
             "language_label",
@@ -1507,12 +1507,14 @@ class DownloaderUI(DownloaderApp):
         canvas_bg = canvas_color or surface
         self.tasks_canvas.configure(
             background=canvas_bg,
+            bg=canvas_bg,
             highlightbackground=canvas_bg,
+            highlightcolor=canvas_bg,
             highlightthickness=0,
             bd=0,
         )
         if self.tasks_inner is not None and canvas_bg is not None:
-            self.tasks_inner.configure(fg_color=canvas_bg)
+            self.tasks_inner.configure(fg_color=canvas_bg, bg_color=canvas_bg)
         self.tasks_scroll.configure(
             fg_color=surface,
             button_color=accent,
