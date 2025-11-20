@@ -118,9 +118,8 @@ def download_video(
         "noprogress": True,
         "extractor_args": {
             "youtube": {
-                # 'ios' is blocked without PO Token.
-                # 'android_creator' (Studio app) gives best quality/speed currently.
-                "player_client": ["android_creator", "android"],
+                # Force the web client to expose 1080p+/4K formats.
+                "player_client": ["web"],
             }
         },
     }
