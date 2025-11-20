@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import webbrowser
 from pathlib import Path
 from typing import Any, Optional
 
@@ -221,6 +222,16 @@ class Bridge:
         else:
             subprocess.Popen(["xdg-open", str(target)])  # noqa: S603
 
+    def open_url(self, url: str) -> None:
+        """Open a URL in the system default browser."""
+
+        if not url:
+            return
+        try:
+            webbrowser.open(url)
+        except Exception:
+            return
+
     def open_file(self, path: str) -> None:
         """Open the provided file with the system default handler."""
 
@@ -248,7 +259,10 @@ class Bridge:
             return
 
         if sys.platform.startswith("win"):
-            os.startfile(folder)  # type: ignore[attr-defined]
+            selection_target = target if target.exists() else folder
+            subprocess.Popen(  # noqa: S603
+                ["explorer", f'/select,"{selection_target}"']
+            )
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(folder)])  # noqa: S603
         else:

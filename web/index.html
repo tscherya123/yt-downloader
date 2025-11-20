@@ -303,12 +303,6 @@
         window.addEventListener('load', () => {
             resetPreview();
 
-            document.addEventListener('click', (event) => {
-                if (!event.target.closest('.task-menu') && !event.target.closest('.menu-trigger')) {
-                    closeAllMenus();
-                }
-            });
-
             trimSlider = new VideoSlider();
 
             const mp4Toggle = document.getElementById('chk-mp4');
@@ -535,21 +529,7 @@
                                 <h4 class="text-sm font-semibold text-white truncate" id="title-${task.id}">${task.title}</h4>
                                 <div class="text-xs text-zinc-500 mt-1" id="status-${task.id}">${statusLabels[task.status] || statusLabels.idle}</div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <button id="open-${task.id}" onclick="openFolder('${task.id}')" class="px-3 py-2 rounded-xl text-xs border border-zinc-700 text-zinc-300 bg-[#202023] flex items-center gap-2">
-                                    <i class="fa-regular fa-folder-open"></i>
-                                    <span>Папка</span>
-                                </button>
-                                <button id="play-${task.id}" onclick="playFile('${task.id}')" class="w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-400 hover:border-indigo-500">
-                                    <i class="fa-solid fa-play"></i>
-                                </button>
-                                <div class="relative task-menu">
-                                    <button id="menu-${task.id}-btn" class="menu-trigger w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-300 hover:border-indigo-500" onclick="toggleMenu('${task.id}')">
-                                        <i class="fa-solid fa-ellipsis-vertical"></i>
-                                    </button>
-                                    <div id="menu-${task.id}" class="hidden absolute right-0 top-11 w-48 bg-[#1f1f24] border border-zinc-700 rounded-xl shadow-xl z-20 overflow-hidden"></div>
-                                </div>
-                            </div>
+                            <div id="actions-${task.id}" class="flex items-center gap-2"></div>
                         </div>
                         <div class="flex justify-between items-center mt-2 text-xs text-zinc-500">
                             <span id="speed-${task.id}">0%</span>
@@ -579,9 +559,6 @@
             const card = document.getElementById('card-' + id);
             const icon = document.getElementById('icon-' + id);
             const statusEl = document.getElementById('status-' + id);
-            const openBtn = document.getElementById('open-' + id);
-            const playBtn = document.getElementById('play-' + id);
-
             if (!card) return;
 
             card.classList.remove('border-green-500/40', 'border-red-500/40');
@@ -595,14 +572,6 @@
                     statusEl.textContent = statusLabels.done;
                 }
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-circle-check text-green-500"></i>';
-                if (openBtn) {
-                    openBtn.classList.remove('cursor-not-allowed', 'opacity-60');
-                    openBtn.dataset.path = task.path || settingsState.root_folder || '';
-                }
-                if (playBtn) {
-                    playBtn.disabled = !task.path;
-                    playBtn.classList.toggle('opacity-50', !task.path);
-                }
             } else if (task.status === 'error') {
                 card.classList.add('border-red-500/40');
                 if (statusEl) {
@@ -610,18 +579,15 @@
                     statusEl.textContent = task.error || statusLabels.error;
                 }
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-400"></i>';
-                if (playBtn) playBtn.disabled = true;
             } else if (task.status === 'cancelled') {
                 if (statusEl) statusEl.textContent = statusLabels.cancelled;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-ban text-zinc-400"></i>';
-                if (playBtn) playBtn.disabled = true;
             } else {
                 if (statusEl) statusEl.textContent = statusLabels[task.status] || statusLabels.idle;
                 if (icon) icon.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i>';
-                if (playBtn) playBtn.disabled = true;
             }
 
-            renderMenu(id);
+            updateActions(task);
         }
 
         function handlePyEvent(data) {
@@ -660,7 +626,7 @@
 
         function openFolder(id) {
             const task = tasks.get(id);
-            const path = (document.getElementById('open-' + id)?.dataset.path) || task?.path || settingsState.root_folder;
+            const path = task?.path || settingsState.root_folder;
             if (path) {
                 pywebview.api.open_folder(path);
             }
@@ -674,7 +640,6 @@
         }
 
         function cancelTask(id) {
-            closeAllMenus();
             pywebview.api.cancel_download(id);
         }
 
@@ -687,58 +652,71 @@
         }
 
         function openUrl(url) {
-            if (url) window.open(url, '_blank');
+            if (!url) return;
+            if (pywebview?.api?.open_url) {
+                pywebview.api.open_url(url);
+            } else {
+                window.open(url, '_blank');
+            }
         }
 
-        function redownloadTask(task) {
-            if (!task?.url) return;
-            document.getElementById('url-input').value = task.url;
+        function retrySearch(url) {
+            if (!url) return;
+            document.getElementById('url-input').value = url;
             searchVideo();
         }
 
-        function renderMenu(id) {
-            const menu = document.getElementById(`menu-${id}`);
-            const task = tasks.get(id);
-            if (!menu || !task) return;
+        function createIconButton(iconClass, handler, options = {}) {
+            const btn = document.createElement('button');
+            btn.className = `w-10 h-10 rounded-xl bg-[#202023] border border-zinc-700 text-zinc-300 hover:border-indigo-500 flex items-center justify-center ${options.extraClasses || ''}`;
+            btn.innerHTML = `<i class="${iconClass}"></i>`;
+            if (options.title) btn.title = options.title;
+            btn.onclick = handler;
+            if (options.disabled) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+            return btn;
+        }
 
-            menu.innerHTML = '';
+        function createTextButton(iconClass, label, handler, options = {}) {
+            const btn = document.createElement('button');
+            btn.className = `px-3 py-2 rounded-xl text-xs border border-zinc-700 text-zinc-300 bg-[#202023] flex items-center gap-2 ${options.extraClasses || ''}`;
+            btn.innerHTML = `<i class="${iconClass}"></i><span>${label}</span>`;
+            btn.onclick = handler;
+            if (options.disabled) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+            return btn;
+        }
+
+        function updateActions(task) {
+            const container = document.getElementById(`actions-${task.id}`);
+            if (!container) return;
+
+            container.innerHTML = '';
             const actions = [];
+
             if (['downloading', 'converting'].includes(task.status)) {
-                actions.push({ label: 'Скасувати', handler: () => cancelTask(id) });
+                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
+                actions.push(createIconButton('fa-solid fa-xmark', () => cancelTask(task.id), { title: 'Скасувати', extraClasses: 'text-red-400 hover:text-red-300 hover:border-red-400/60' }));
+            } else if (['error', 'cancelled'].includes(task.status)) {
+                actions.push(createIconButton('fa-solid fa-rotate-right', () => retrySearch(task.url), { title: 'Спробувати ще' }));
+                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
+                actions.push(createIconButton('fa-solid fa-trash-can', () => removeTask(task.id), { title: 'Видалити', extraClasses: 'hover:text-red-400 hover:border-red-400/60' }));
             } else if (task.status === 'done') {
-                actions.push({ label: 'Відкрити посилання', handler: () => openUrl(task.url) });
-                actions.push({ label: 'Скачати знову', handler: () => redownloadTask(task) });
-                actions.push({ label: 'Видалити', handler: () => removeTask(id) });
-            } else if (task.status === 'error') {
-                actions.push({ label: 'Спробувати ще', handler: () => redownloadTask(task) });
-                actions.push({ label: 'Видалити', handler: () => removeTask(id) });
+                actions.push(createTextButton('fa-regular fa-folder-open', 'Папка', () => openFolder(task.id), { disabled: !task.path }));
+                actions.push(createIconButton('fa-solid fa-play', () => playFile(task.id), { disabled: !task.path, title: 'Відтворити' }));
+                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
+                actions.push(createIconButton('fa-solid fa-rotate-right', () => retrySearch(task.url), { title: 'Спробувати ще' }));
+                actions.push(createIconButton('fa-solid fa-trash-can', () => removeTask(task.id), { title: 'Видалити', extraClasses: 'hover:text-red-400 hover:border-red-400/60' }));
             } else {
-                actions.push({ label: 'Видалити', handler: () => removeTask(id) });
+                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
+                actions.push(createIconButton('fa-solid fa-trash-can', () => removeTask(task.id), { title: 'Видалити', extraClasses: 'hover:text-red-400 hover:border-red-400/60' }));
             }
 
-            actions.forEach(action => {
-                const btn = document.createElement('button');
-                btn.className = 'w-full text-left px-4 py-3 text-sm text-white hover:bg-[#26262c]';
-                btn.textContent = action.label;
-                btn.onclick = () => {
-                    action.handler();
-                    closeAllMenus();
-                };
-                menu.appendChild(btn);
-            });
-        }
-
-        function closeAllMenus() {
-            document.querySelectorAll('[id^="menu-"]').forEach(menu => menu.classList.add('hidden'));
-        }
-
-        function toggleMenu(id) {
-            const menu = document.getElementById(`menu-${id}`);
-            if (!menu) return;
-            renderMenu(id);
-            const isHidden = menu.classList.contains('hidden');
-            closeAllMenus();
-            menu.classList.toggle('hidden', !isHidden);
+            actions.forEach(btn => container.appendChild(btn));
         }
     </script>
 </body>
