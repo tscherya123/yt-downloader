@@ -66,6 +66,7 @@ class Bridge:
         )
         self._ensure_root_folder(self.root_folder)
         self.queue_items = self._load_queue()
+        self.waiting_queue: list[dict[str, Any]] = []
         self.update_status = "checking"
         self.pending_update_info: UpdateInfo | None = None
         self.update_cache_dir = self.CONFIG_DIR / "updates"
@@ -196,21 +197,33 @@ class Bridge:
         self.settings["root_folder"] = str(root_folder)
         self._save_settings()
 
-        worker = DownloadWorker(
-            task_id=task_id,
-            url=url,
-            root=root_folder,
-            title=title,
-            separate_folder=separate_folder,
-            convert_to_mp4=convert_to_mp4,
-            start_seconds=start_seconds,
-            end_seconds=end_seconds,
-            event_queue=self.event_queue,
-            language=DEFAULT_LANGUAGE,
-        )
+        worker_args = {
+            "task_id": task_id,
+            "url": url,
+            "root": root_folder,
+            "title": title,
+            "separate_folder": separate_folder,
+            "convert_to_mp4": convert_to_mp4,
+            "start_seconds": start_seconds,
+            "end_seconds": end_seconds,
+        }
 
         with self._lock:
-            self.workers[task_id] = worker
+            active_workers = len(self.workers)
+
+        if sequential_download and (active_workers > 0 or self.waiting_queue):
+            with self._lock:
+                self.waiting_queue.append(worker_args)
+            self._add_queue_item(
+                task_id,
+                url=url,
+                title=title or url,
+                status="queued",
+                path="",
+                error="",
+            )
+            return {"status": "ok", "task_id": task_id, "queued": True}
+
         self._add_queue_item(
             task_id,
             url=url,
@@ -219,8 +232,50 @@ class Bridge:
             path="",
             error="",
         )
-        worker.start()
+        self._start_worker(worker_args)
         return {"status": "ok", "task_id": task_id}
+
+    def _start_worker(self, worker_args: dict[str, Any]) -> DownloadWorker:
+        worker = DownloadWorker(
+            task_id=worker_args["task_id"],
+            url=worker_args["url"],
+            root=worker_args["root"],
+            title=worker_args.get("title"),
+            separate_folder=worker_args.get("separate_folder", False),
+            convert_to_mp4=bool(worker_args.get("convert_to_mp4", True)),
+            start_seconds=float(worker_args.get("start_seconds", 0.0) or 0.0),
+            end_seconds=worker_args.get("end_seconds"),
+            event_queue=self.event_queue,
+            language=DEFAULT_LANGUAGE,
+        )
+        with self._lock:
+            self.workers[worker.task_id] = worker
+        worker.start()
+        return worker
+
+    def _remove_from_waiting(self, task_id: str) -> bool:
+        with self._lock:
+            for index, queued in enumerate(self.waiting_queue):
+                if queued.get("task_id") == task_id:
+                    self.waiting_queue.pop(index)
+                    return True
+        return False
+
+    def _mark_status(self, task_id: str, status: str, error: str | None = None) -> None:
+        updated = False
+        with self._lock:
+            for item in self.queue_items:
+                if item.get("id") != task_id:
+                    continue
+                item["status"] = status
+                if error is not None:
+                    item["error"] = error
+                elif status != "error":
+                    item["error"] = ""
+                updated = True
+                break
+            if updated:
+                self._save_queue()
 
     def open_path(self, path: str) -> None:
         """Open the given file or folder in the native file explorer."""
@@ -289,6 +344,10 @@ class Bridge:
 
         with self._lock:
             worker = self.workers.get(task_id)
+            if worker is None and self._remove_from_waiting(task_id):
+                self._mark_status(task_id, "cancelled")
+                self.event_queue.put({"task_id": task_id, "type": "finished", "cancelled": True})
+                return {"status": "ok", "task_id": task_id}
         if worker is None:
             return {"status": "error", "error": "Task not found"}
 
@@ -301,7 +360,25 @@ class Bridge:
         with self._lock:
             self.queue_items = [item for item in self.queue_items if item.get("id") != task_id]
             self._save_queue()
+        self._remove_from_waiting(task_id)
         return {"status": "ok", "task_id": task_id}
+
+    def get_queue_stats(self) -> dict[str, int]:
+        with self._lock:
+            return {"count": len(self.queue_items), "active": len(self.workers)}
+
+    def clear_all_history(self) -> dict[str, int]:
+        return self.get_queue_stats()
+
+    def perform_clear(self) -> dict[str, str]:
+        with self._lock:
+            workers = list(self.workers.values())
+            self.waiting_queue.clear()
+            self.queue_items = []
+            self._save_queue()
+        for worker in workers:
+            worker.cancel()
+        return {"status": "ok"}
 
     def update_setting(self, key: str, value: Any) -> dict[str, str]:
         """Update a specific setting and persist it."""
@@ -468,6 +545,18 @@ class Bridge:
         except Exception:
             return
 
+    def _process_queue(self) -> None:
+        with self._lock:
+            if self.workers or not self.waiting_queue:
+                return
+            next_args = self.waiting_queue.pop(0)
+
+        self._mark_status(next_args["task_id"], "downloading", error="")
+        self.event_queue.put(
+            {"task_id": next_args["task_id"], "type": "status", "status": "downloading"}
+        )
+        self._start_worker(next_args)
+
     def _dispatch_events(self) -> None:
         while self._running:
             try:
@@ -485,6 +574,9 @@ class Bridge:
                         self.workers.pop(task_id, None)
 
             self._update_queue_from_event(event)
+
+            if event.get("type") in {"done", "error", "finished"}:
+                self._process_queue()
 
             if self.window:
                 try:
@@ -569,23 +661,35 @@ class Bridge:
             self._save_queue_data([])
             return []
         valid_items: list[dict[str, Any]] = []
+        changed = False
         for item in loaded:
             if not isinstance(item, dict):
                 continue
             task_id = str(item.get("id", "")).strip()
             if not task_id:
                 continue
+            status = item.get("status", "done")
+            error = item.get("error", "")
+            if status in {"downloading", "converting"}:
+                status = "error"
+                error = "Відео не було повністю завантажено"
+                changed = True
+            elif status == "queued":
+                status = "cancelled"
+                changed = True
+
             valid_items.append(
                 {
                     "id": task_id,
                     "title": item.get("title") or item.get("url") or task_id,
                     "url": item.get("url", ""),
-                    "status": item.get("status", "done"),
+                    "status": status,
                     "path": item.get("path", ""),
-                    "error": item.get("error", ""),
+                    "error": error,
                 }
             )
-        self._save_queue_data(valid_items)
+        if changed or not self.QUEUE_FILE.exists():
+            self._save_queue_data(valid_items)
         return valid_items
 
     def _save_queue(self) -> None:
@@ -640,6 +744,12 @@ class Bridge:
                     updated = True
                 if event_type == "finished" and event.get("cancelled"):
                     item["status"] = "cancelled"
+                    updated = True
+                if event_type == "status" and event.get("status"):
+                    item["status"] = str(event.get("status"))
+                    updated = True
+                if event_type == "progress" and event.get("status"):
+                    item["status"] = str(event.get("status"))
                     updated = True
                 break
 

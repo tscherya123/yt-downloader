@@ -79,15 +79,7 @@ class DownloadWorker(threading.Thread):
                         import re
 
                         p = re.sub(r"\x1b\[[0-9;]*m", "", p)
-                        progress = float(p)
-                        speed = str(d.get("_speed_str", "N/A"))
-                        speed = re.sub(r"\x1b\[[0-9;]*m", "", speed)
-                        self._emit(
-                            "progress",
-                            progress=progress,
-                            speed=speed,
-                            status="downloading",
-                        )
+                        self._emit("progress", progress=float(p), status="downloading")
                     except Exception:
                         pass
                 elif d.get("status") == "finished":
