@@ -29,6 +29,13 @@
         .trim-fill { position: absolute; height: 100%; background: linear-gradient(90deg, #4f46e5, #8b5cf6); border-radius: 999px; left: 0%; width: 100%; top: 0; }
         .trim-handle { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 18px; height: 18px; background: white; border-radius: 999px; border: 3px solid #6366f1; box-shadow: 0 6px 16px rgba(0,0,0,0.45); cursor: pointer; z-index: 10; }
         .trim-handle.active { cursor: grabbing; }
+
+        @keyframes shimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
+
+        .progress-shimmer { background-size: 200% 100%; animation: shimmer 2s ease-in-out infinite; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden border border-zinc-800 rounded-2xl">
@@ -165,14 +172,51 @@
     <!-- STATUS BAR -->
     <footer class="h-8 shrink-0 bg-[#18181b] border-t border-zinc-800 px-5 flex items-center justify-between text-xs text-zinc-400">
         <div class="flex items-center gap-3">
-            <span class="flex items-center gap-2 text-green-400"><span class="w-2 h-2 bg-green-400 rounded-full"></span>Готовий</span>
+            <div id="footer-checking" class="flex items-center gap-2 text-indigo-300">
+                <span class="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>
+                <span>Перевірка оновлень...</span>
+            </div>
+            <div id="footer-ready" class="hidden items-center gap-2 text-green-400">
+                <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+                <span>Готовий</span>
+            </div>
+            <button id="footer-update-button" onclick="startUpdate()" class="hidden items-center gap-2 text-orange-300 border border-orange-500/60 bg-orange-500/10 hover:bg-orange-500/20 px-3 py-1 rounded-lg text-xs font-semibold animate-pulse">
+                <i id="footer-update-spinner" class="fa-solid fa-rotate fa-spin hidden"></i>
+                <span id="footer-update-text">Натисніть, щоб оновити</span>
+            </button>
             <span class="text-zinc-500">Версія <span id="app-version">loading...</span></span>
         </div>
-        <div class="flex items-center gap-4 text-zinc-500">
-            <span>UA</span>
-            <span>Dark Theme</span>
-        </div>
+    <div class="flex items-center gap-4 text-zinc-500">
+        <span>UA</span>
+        <span>Dark Theme</span>
+    </div>
     </footer>
+
+    <div id="update-overlay" class="fixed inset-0 z-50 bg-black/90 hidden">
+        <div class="h-full w-full flex items-center justify-center p-6">
+            <div class="w-full max-w-lg bg-[#141418] border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-orange-500/20 border border-orange-400/50 flex items-center justify-center text-orange-300">
+                        <i class="fa-solid fa-rotate"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold">Оновлення...</h3>
+                        <p id="update-status-text" class="text-sm text-zinc-400">Завантаження...</p>
+                    </div>
+                </div>
+                <div class="w-full h-3 bg-[#1f1f24] rounded-full overflow-hidden border border-zinc-800">
+                    <div id="update-progress-bar" class="h-full bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-400 progress-shimmer transition-all duration-300" style="width: 0%;"></div>
+                </div>
+                <div class="flex items-center justify-between text-sm text-zinc-400">
+                    <span>Прогрес</span>
+                    <span id="update-progress-label">0%</span>
+                </div>
+                <div class="flex items-center justify-end gap-2">
+                    <button id="update-restart-btn" class="hidden px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold" onclick="restartManually()">Перезапустити</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         const statusLabels = {
@@ -188,6 +232,7 @@
         const settingsState = { root_folder: '', mp4: true, sequential: false };
         let currentMetadata = null;
         let trimSlider = null;
+        const updateState = { status: 'checking', availableVersion: null };
 
         function formatTime(seconds) {
             const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -361,6 +406,8 @@
             if (Array.isArray(data?.history)) {
                 data.history.forEach(task => registerTask(task));
             }
+
+            setFooterChecking();
         }
 
         function setSearchLoading(isLoading) {
@@ -591,7 +638,51 @@
             updateActions(task);
         }
 
+        function handleUpdateEvent(event) {
+            if (!event?.type) return;
+            if (event.type === 'update_checking') {
+                setFooterChecking();
+                return;
+            }
+            if (event.type === 'update_not_found') {
+                setFooterReady();
+                hideUpdateOverlay();
+                return;
+            }
+            if (event.type === 'update_available') {
+                updateState.availableVersion = event.version || null;
+                setFooterUpdateAvailable(event.version);
+                hideUpdateOverlay();
+                return;
+            }
+            if (event.type === 'update_progress') {
+                const progressValue = Math.max(0, Math.min(100, Number(event.progress) || 0));
+                const stage = event.stage === 'install' ? 'install' : 'download';
+                showUpdateOverlay(stage);
+                setUpdateProgress(progressValue);
+                return;
+            }
+            if (event.type === 'update_ready') {
+                showUpdateOverlay('install');
+                setUpdateProgress(100);
+                setUpdateStatusText('Завершення...');
+                return;
+            }
+            if (event.type === 'update_error') {
+                hideUpdateOverlay();
+                setFooterReady();
+                if (event.error) {
+                    alert(`Помилка оновлення: ${event.error}`);
+                }
+            }
+        }
+
         function handlePyEvent(data) {
+            if (data?.type && data.type.startsWith('update')) {
+                handleUpdateEvent(data);
+                return;
+            }
+
             if (!data || !data.task_id) return;
             const task = tasks.get(data.task_id) || { id: data.task_id, title: data.title || data.task_id, url: '', status: 'downloading', path: '', error: '' };
             tasks.set(task.id, task);
@@ -623,6 +714,83 @@
             createTaskCard(task);
             setCardState(task);
             updateQueueCount();
+        }
+
+        function setFooterChecking() {
+            updateState.status = 'checking';
+            const checking = document.getElementById('footer-checking');
+            const ready = document.getElementById('footer-ready');
+            const btn = document.getElementById('footer-update-button');
+            checking?.classList.remove('hidden');
+            ready?.classList.add('hidden');
+            btn?.classList.add('hidden');
+        }
+
+        function setFooterReady() {
+            updateState.status = 'ready';
+            const checking = document.getElementById('footer-checking');
+            const ready = document.getElementById('footer-ready');
+            const btn = document.getElementById('footer-update-button');
+            checking?.classList.add('hidden');
+            ready?.classList.remove('hidden');
+            btn?.classList.add('hidden');
+            const spinner = document.getElementById('footer-update-spinner');
+            spinner?.classList.add('hidden');
+        }
+
+        function setFooterUpdateAvailable(version) {
+            updateState.status = 'available';
+            updateState.availableVersion = version || null;
+            const checking = document.getElementById('footer-checking');
+            const ready = document.getElementById('footer-ready');
+            const btn = document.getElementById('footer-update-button');
+            const text = document.getElementById('footer-update-text');
+            checking?.classList.add('hidden');
+            ready?.classList.add('hidden');
+            if (text) text.textContent = version ? `Натисніть, щоб оновити до v${version}` : 'Натисніть, щоб оновити';
+            btn?.classList.remove('hidden');
+            btn?.classList.add('animate-pulse');
+        }
+
+        function startUpdate() {
+            const btn = document.getElementById('footer-update-button');
+            const spinner = document.getElementById('footer-update-spinner');
+            if (btn) {
+                btn.classList.remove('animate-pulse');
+                btn.classList.add('opacity-80');
+            }
+            spinner?.classList.remove('hidden');
+            showUpdateOverlay('download');
+            setUpdateProgress(0);
+            pywebview?.api?.perform_update?.();
+        }
+
+        function showUpdateOverlay(stage = 'download') {
+            const overlay = document.getElementById('update-overlay');
+            overlay?.classList.remove('hidden');
+            setUpdateStatusText(stage === 'install' ? 'Розпаковка...' : 'Завантаження...');
+        }
+
+        function hideUpdateOverlay() {
+            const overlay = document.getElementById('update-overlay');
+            overlay?.classList.add('hidden');
+        }
+
+        function setUpdateStatusText(text) {
+            const el = document.getElementById('update-status-text');
+            if (el) el.textContent = text;
+        }
+
+        function setUpdateProgress(value) {
+            const bar = document.getElementById('update-progress-bar');
+            const label = document.getElementById('update-progress-label');
+            const percent = Math.max(0, Math.min(100, Number(value) || 0));
+            if (bar) bar.style.width = `${percent}%`;
+            if (label) label.textContent = `${percent}%`;
+        }
+
+        function restartManually() {
+            pywebview?.api?.close_window?.();
         }
 
         function openFolder(id) {
