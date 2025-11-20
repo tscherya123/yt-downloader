@@ -203,7 +203,7 @@ class DownloaderUI(DownloaderApp):
         if self._main_interface_initialized:
             return
 
-        container = ctk.CTkFrame(self, fg_color="transparent")
+        container = ctk.CTkFrame(self)
         container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         self.root_container = container
         self.grid_rowconfigure(0, weight=1)
@@ -213,7 +213,7 @@ class DownloaderUI(DownloaderApp):
         container.grid_rowconfigure(0, weight=0)
         container.grid_rowconfigure(1, weight=1)
 
-        options_frame = ctk.CTkFrame(container, fg_color="transparent")
+        options_frame = ctk.CTkFrame(container)
         options_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
         options_frame.grid_columnconfigure(1, weight=1)
         options_frame.grid_columnconfigure(3, weight=1)
@@ -251,6 +251,12 @@ class DownloaderUI(DownloaderApp):
         left_frame.grid_columnconfigure(3, weight=0)
         left_frame.grid_rowconfigure(4, weight=1)
         self.left_frame = left_frame
+
+        right_column = ctk.CTkFrame(container, fg_color="transparent")
+        right_column.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
+        right_column.grid_columnconfigure(0, weight=1)
+        right_column.grid_rowconfigure(0, weight=1)
+        self.right_column = right_column
 
         self.url_label = ctk.CTkLabel(left_frame, text=self._("url_label"), font=self.base_font)
         self.url_label.grid(row=0, column=0, sticky="w")
@@ -396,9 +402,9 @@ class DownloaderUI(DownloaderApp):
         )
         self.preview_status_label.grid(row=5, column=0, sticky="w", padx=12, pady=(0, 12))
 
-        self.queue_frame = ctk.CTkFrame(container, corner_radius=8)
+        self.queue_frame = ctk.CTkFrame(right_column, corner_radius=8)
         queue_frame = self.queue_frame
-        queue_frame.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
+        queue_frame.grid(row=0, column=0, sticky="nsew")
         queue_frame.columnconfigure(0, weight=1)
         queue_frame.rowconfigure(3, weight=1)
 
@@ -447,10 +453,18 @@ class DownloaderUI(DownloaderApp):
         self.queue_status_header.grid(row=0, column=1, sticky="w")
         self.queue_actions_header.grid(row=0, column=2, sticky="e")
 
-        self.tasks_canvas = tk.Canvas(queue_frame, highlightthickness=0)
-        self.tasks_canvas.grid(row=3, column=0, sticky="nsew")
-        self.tasks_scroll = ctk.CTkScrollbar(queue_frame, orientation="vertical")
-        self.tasks_scroll.grid(row=3, column=1, sticky="ns")
+        tasks_container = ctk.CTkFrame(queue_frame, fg_color="transparent")
+        tasks_container.grid(
+            row=3, column=0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12)
+        )
+        tasks_container.grid_columnconfigure(0, weight=1)
+        tasks_container.grid_rowconfigure(0, weight=1)
+        self.tasks_container = tasks_container
+
+        self.tasks_canvas = tk.Canvas(tasks_container, highlightthickness=0)
+        self.tasks_canvas.grid(row=0, column=0, sticky="nsew")
+        self.tasks_scroll = ctk.CTkScrollbar(tasks_container, orientation="vertical")
+        self.tasks_scroll.grid(row=0, column=1, sticky="ns", padx=(6, 0))
         self.tasks_canvas.configure(yscrollcommand=self.tasks_scroll.set)
         self.tasks_scroll.configure(command=self.tasks_canvas.yview)
         self.tasks_inner = ctk.CTkFrame(self.tasks_canvas, fg_color="transparent")
@@ -1414,12 +1428,14 @@ class DownloaderUI(DownloaderApp):
             "root_container",
             "options_frame",
             "left_frame",
+            "right_column",
             "download_options_frame",
             "preview_frame",
             "clip_frame",
             "queue_frame",
             "queue_header_frame",
             "queue_columns_frame",
+            "tasks_container",
             "log_frame",
         ):
             frame = getattr(self, frame_name, None)
