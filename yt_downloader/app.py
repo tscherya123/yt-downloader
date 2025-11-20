@@ -137,6 +137,18 @@ class DownloaderUI(DownloaderApp):
         self.convert_to_mp4_var = ctk.BooleanVar(value=convert_enabled)
         self.convert_to_mp4_var.trace_add("write", self._on_convert_to_mp4_toggle)
 
+        sequential_setting = self.settings.get("sequential_downloads")
+        if isinstance(sequential_setting, bool):
+            sequential_enabled = sequential_setting
+        else:
+            sequential_enabled = True
+            self.settings["sequential_downloads"] = sequential_enabled
+            self._save_settings()
+        self.sequential_downloads_var = ctk.BooleanVar(value=sequential_enabled)
+        self.sequential_downloads_var.trace_add(
+            "write", self._on_sequential_downloads_toggle
+        )
+
         self.update_cache_dir = self.config_dir / "updates"
 
         self._set_window_title()
@@ -161,6 +173,7 @@ class DownloaderUI(DownloaderApp):
 
         self.event_queue: "queue.Queue[dict[str, object]]" = queue.Queue()
         self.workers: dict[str, DownloadWorker] = {}
+        self.pending_workers: dict[str, DownloadWorker] = {}
         self.tasks: dict[str, TaskRow] = {}
         self.task_order: list[str] = []
         self.task_counter = self._compute_next_task_counter()
@@ -235,6 +248,7 @@ class DownloaderUI(DownloaderApp):
         left_frame = ctk.CTkFrame(container)
         left_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
         left_frame.grid_columnconfigure(1, weight=1)
+        left_frame.grid_columnconfigure(3, weight=0)
         left_frame.grid_rowconfigure(4, weight=1)
         self.left_frame = left_frame
 
@@ -279,13 +293,24 @@ class DownloaderUI(DownloaderApp):
             font=self.base_font,
         )
         self.convert_check.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(12, 0))
+        self.sequential_check = ctk.CTkCheckBox(
+            left_frame,
+            text=self._("sequential_downloads"),
+            variable=self.sequential_downloads_var,
+            onvalue=True,
+            offvalue=False,
+            font=self.base_font,
+        )
+        self.sequential_check.grid(
+            row=2, column=2, sticky="w", padx=(12, 0), pady=(12, 0)
+        )
         self.download_button = ctk.CTkButton(
             left_frame,
             text=self._("download_button"),
             command=self._start_worker,
             state="disabled",
         )
-        self.download_button.grid(row=2, column=2, sticky="e", pady=(12, 0))
+        self.download_button.grid(row=2, column=3, sticky="e", pady=(12, 0))
 
         self.preview_frame = ctk.CTkFrame(left_frame, corner_radius=8)
         preview_frame = self.preview_frame
@@ -593,6 +618,12 @@ class DownloaderUI(DownloaderApp):
         self.queue_state["next_id"] = max(self.task_counter, 1)
 
         display_title = self.preview_info.get("title") or url
+        initial_status = "downloading"
+        if self.sequential_downloads_var.get() and (
+            self._has_running_workers() or self.pending_workers
+        ):
+            initial_status = "waiting"
+
         task_row = TaskRow(
             self.tasks_inner,
             task_id=task_id,
@@ -604,7 +635,7 @@ class DownloaderUI(DownloaderApp):
             open_url_callback=self._open_source_url,
             retry_callback=self._retry_task,
             source_url=url,
-            status="downloading",
+            status=initial_status,
             palette=self.current_palette,
             title_font=self.bold_font,
             status_font=self.small_font,
@@ -616,7 +647,7 @@ class DownloaderUI(DownloaderApp):
         record: dict[str, Any] = {
             "task_id": task_id,
             "title": display_title,
-            "status": "downloading",
+            "status": initial_status,
             "path": None,
             "created_at": _dt.datetime.now().isoformat(),
             "url": url,
@@ -645,10 +676,13 @@ class DownloaderUI(DownloaderApp):
             event_queue=self.event_queue,
             language=self.language,
         )
-        self.workers[task_id] = worker
-        worker.start()
-
-        self._append_log(f"[{task_row.full_title}] {self._('log_process_started')}")
+        if initial_status == "waiting":
+            self.pending_workers[task_id] = worker
+            self._maybe_start_next_waiting_task()
+        else:
+            self.workers[task_id] = worker
+            worker.start()
+            self._append_log(f"[{task_row.full_title}] {self._('log_process_started')}")
 
     def _on_url_change(self, *_: object) -> None:
         self.preview_token += 1
@@ -892,7 +926,53 @@ class DownloaderUI(DownloaderApp):
         for tid in finished:
             self.workers.pop(tid, None)
 
+        if self.sequential_downloads_var.get():
+            self._maybe_start_next_waiting_task()
+        elif self.pending_workers:
+            self._start_all_pending_tasks()
+
         self.after(200, self._poll_queue)
+
+    def _maybe_start_next_waiting_task(self) -> None:
+        if self._has_running_workers():
+            return
+        if not self.pending_workers:
+            return
+        ordered = sorted(self.pending_workers, key=self._task_created_at)
+        self._activate_pending_worker(ordered[0])
+
+    def _start_all_pending_tasks(self) -> None:
+        if not self.pending_workers:
+            return
+        for task_id in sorted(self.pending_workers, key=self._task_created_at):
+            self._activate_pending_worker(task_id)
+
+    def _activate_pending_worker(self, task_id: str) -> None:
+        worker = self.pending_workers.pop(task_id, None)
+        if worker is None:
+            return
+        task_row = self.tasks.get(task_id)
+        if not task_row:
+            self._remove_queue_record(task_id)
+            return
+        task_row.update_status("downloading")
+        self._update_queue_record(task_id, status="downloading")
+        self.workers[task_id] = worker
+        worker.start()
+        self._append_log(f"[{task_row.full_title}] {self._('log_process_started')}")
+
+    def _has_running_workers(self) -> bool:
+        return any(worker.is_alive() for worker in self.workers.values())
+
+    def _task_created_at(self, task_id: str) -> float:
+        record = self.queue_records.get(task_id, {})
+        raw_timestamp = record.get("created_at") if isinstance(record, dict) else None
+        if isinstance(raw_timestamp, str):
+            try:
+                return _dt.datetime.fromisoformat(raw_timestamp).timestamp()
+            except Exception:
+                pass
+        return _dt.datetime.now().timestamp()
 
     def _append_log(self, message: str) -> None:
         if not hasattr(self, "log_widget"):
@@ -926,6 +1006,7 @@ class DownloaderUI(DownloaderApp):
         self.tasks.clear()
         self.task_order.clear()
         self.queue_records.clear()
+        self.pending_workers.clear()
         self.queue_state["items"] = []
         self._save_queue_state()
         self._reflow_task_rows()
@@ -979,6 +1060,7 @@ class DownloaderUI(DownloaderApp):
         worker = self.workers.get(task_id)
         if worker and worker.is_alive():
             return
+        self.pending_workers.pop(task_id, None)
         row.destroy()
         self.tasks.pop(task_id, None)
         try:
@@ -1073,6 +1155,7 @@ class DownloaderUI(DownloaderApp):
 
     def _remove_queue_record(self, task_id: str) -> None:
         self.queue_records.pop(task_id, None)
+        self.pending_workers.pop(task_id, None)
         self.queue_state["items"] = [
             item for item in self.queue_state.get("items", []) if item.get("task_id") != task_id
         ]
@@ -1219,6 +1302,7 @@ class DownloaderUI(DownloaderApp):
         self.browse_button.configure(text=self._("choose_button"))
         self.separate_check.configure(text=self._("separate_folder"))
         self.convert_check.configure(text=self._("convert_to_mp4"))
+        self.sequential_check.configure(text=self._("sequential_downloads"))
         self.download_button.configure(text=self._("download_button"))
         self.preview_frame_label.configure(text=self._("preview_group"))
         self.queue_frame_label.configure(text=self._("queue_group"))
@@ -1484,6 +1568,16 @@ class DownloaderUI(DownloaderApp):
         if self.settings.get("convert_to_mp4") != value:
             self.settings["convert_to_mp4"] = value
             self._save_settings()
+
+    def _on_sequential_downloads_toggle(self, *_: object) -> None:
+        value = self.sequential_downloads_var.get()
+        if self.settings.get("sequential_downloads") != value:
+            self.settings["sequential_downloads"] = value
+            self._save_settings()
+        if value:
+            self._maybe_start_next_waiting_task()
+        else:
+            self._start_all_pending_tasks()
 
     def _(self, key: str, **kwargs: object) -> str:
         return translate(self.language, key, **kwargs)

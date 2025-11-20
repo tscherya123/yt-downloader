@@ -112,6 +112,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Конвертувати в MP4 (довше)",
         "en": "Convert to MP4 (slower)",
     },
+    "sequential_downloads": {
+        "uk": "Завантажувати послідовно",
+        "en": "Download sequentially",
+    },
     "download_button": {"uk": "Скачати", "en": "Download"},
     "preview_group": {"uk": "Попередній перегляд", "en": "Preview"},
     "preview_title": {"uk": "Назва: {title}", "en": "Title: {title}"},
