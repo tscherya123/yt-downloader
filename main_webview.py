@@ -193,7 +193,8 @@ def main() -> None:
     )
     bridge = Bridge(window)
     window.events.closed += bridge.shutdown
-    webview.start(js_api=bridge)
+    window.expose(bridge)
+    webview.start()
 
 
 if __name__ == "__main__":
