@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -58,8 +59,16 @@ def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> 
     except OSError:
         pass
 
+    local_update = current_executable.with_suffix(".exe.new")
+    shutil.copy2(new_executable, local_update)
+
+    try:
+        local_update.chmod(0o755)
+    except OSError:
+        pass
+
     current_executable.replace(backup)
-    new_executable.replace(current_executable)
+    local_update.replace(current_executable)
 
     try:
         current_executable.chmod(0o755)
