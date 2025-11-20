@@ -64,15 +64,15 @@ class Bridge:
         self._lock = threading.Lock()
 
         self.settings = self._load_settings()
-        self.root_folder = (
-            Path(self.settings.get("root_folder", DEFAULT_ROOT)).expanduser().resolve()
-        )
-        self._ensure_root_folder(self.root_folder)
+        root_path = Path(self.settings.get("root_folder", DEFAULT_ROOT)).expanduser().resolve()
+        self._ensure_root_folder(root_path)
+        # Store paths as strings to avoid pywebview serialization issues
+        self.root_folder = str(root_path)
         self.queue_items = self._load_queue()
         self.waiting_queue: list[dict[str, Any]] = []
         self.update_status = "checking"
         self.pending_update_info: UpdateInfo | None = None
-        self.update_cache_dir = CONFIG_DIR / "updates"
+        self.update_cache_dir = str(CONFIG_DIR / "updates")
         cleanup_old_versions()
 
     def get_init_data(self) -> dict[str, Any]:
@@ -89,7 +89,7 @@ class Bridge:
         return {
             "version": __version__,
             "settings": {
-                "root_folder": str(self.root_folder.resolve()),
+                "root_folder": str(Path(self.root_folder).resolve()),
                 "mp4": bool(self.settings.get("mp4", True)),
                 "sequential": bool(self.settings.get("sequential", False)),
             },
@@ -172,8 +172,8 @@ class Bridge:
             return ""
 
         selected_path = Path(str(selected_raw)).expanduser().resolve()
-        self.root_folder = selected_path
-        self._ensure_root_folder(self.root_folder)
+        self.root_folder = str(selected_path)
+        self._ensure_root_folder(selected_path)
         self.settings["root_folder"] = str(selected_path)
         self._save_settings()
 
@@ -193,7 +193,7 @@ class Bridge:
             return {"status": "error", "error": "Invalid URL"}
 
         task_id = str(uuid.uuid4())
-        root_folder = self.root_folder
+        root_folder = Path(self.root_folder)
         separate_folder = False
         convert_to_mp4 = bool(options.get("mp4", self.settings.get("mp4", True)))
         sequential_download = bool(options.get("sequential", self.settings.get("sequential", False)))
@@ -398,8 +398,8 @@ class Bridge:
             except Exception:
                 return {"status": "error", "error": "Invalid path"}
             self._ensure_root_folder(folder)
-            self.root_folder = folder
-            self.settings["root_folder"] = str(folder)
+            self.root_folder = str(folder.resolve())
+            self.settings["root_folder"] = self.root_folder
         elif key in {"mp4", "sequential"}:
             self.settings[key] = bool(value)
         else:
@@ -496,13 +496,13 @@ class Bridge:
 
         try:
             download_path = download_update_asset(
-                info, self.update_cache_dir, progress_callback=progress
+                info, Path(self.update_cache_dir), progress_callback=progress
             )
             self._emit_update_event(
                 {"type": "update_progress", "progress": 0, "stage": "install"}
             )
             install_result = install_downloaded_asset(
-                download_path, info.latest_version, self.update_cache_dir
+                download_path, info.latest_version, Path(self.update_cache_dir)
             )
         except UpdateError as exc:
             self._emit_update_event({"type": "update_error", "error": str(exc)})
