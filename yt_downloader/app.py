@@ -1408,7 +1408,7 @@ class DownloaderUI(DownloaderApp):
         highlight = colors.get("highlight", surface)
 
         if background:
-            self.configure(fg_color=background)
+            self.configure(fg_color=background, bg_color=background)
         frame_color = surface or background
         for frame_name in (
             "root_container",
@@ -1424,7 +1424,7 @@ class DownloaderUI(DownloaderApp):
         ):
             frame = getattr(self, frame_name, None)
             if frame is not None and frame_color is not None:
-                frame.configure(fg_color=frame_color)
+                frame.configure(fg_color=frame_color, bg_color=background)
 
         label_targets = (
             "language_label",
