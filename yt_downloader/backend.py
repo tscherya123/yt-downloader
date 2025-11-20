@@ -111,14 +111,16 @@ def download_video(
             "temp": str(tempdir),
         },
         "outtmpl": "source.%(ext)s",
-        "format": "bestvideo*+bestaudio/best",  # Allow fallback when split streams are unavailable
+        "format": "bestvideo*+bestaudio/best",  # More permissive format selection
         "format_sort": ["res:1080", "fps", "br"],
         "concurrent_fragment_downloads": 8,
         "hls_prefer_ffmpeg": True,
         "noprogress": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "web"],
+                # 'ios' is blocked without PO Token.
+                # 'android_creator' (Studio app) gives best quality/speed currently.
+                "player_client": ["android_creator", "android"],
             }
         },
     }
