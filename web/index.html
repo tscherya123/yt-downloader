@@ -31,7 +31,7 @@
         .trim-handle.active { cursor: grabbing; }
     </style>
 </head>
-<body class="h-screen min-h-[920px] flex flex-col border border-zinc-800 rounded-2xl overflow-hidden">
+<body class="h-screen flex flex-col overflow-hidden border border-zinc-800 rounded-2xl">
     <!-- TITLE BAR -->
     <div class="h-11 bg-[#1a1a1f] border-b border-zinc-800 flex items-center justify-between px-4 drag-handle pywebview-drag-region">
         <div class="flex items-center gap-2 text-sm text-zinc-200">
@@ -46,7 +46,7 @@
     </div>
 
     <!-- MAIN CONTENT -->
-    <div class="flex flex-1 overflow-hidden bg-[#0f0f11]">
+    <div class="flex flex-1 min-h-0 overflow-hidden bg-[#0f0f11]">
         <!-- SIDEBAR -->
         <aside class="w-[420px] bg-[#18181b] border-r border-zinc-800 p-6 flex flex-col gap-5 overflow-y-auto">
             <div>
@@ -146,7 +146,7 @@
         </aside>
 
         <!-- MAIN PANEL -->
-        <main class="flex-1 bg-[#121212] flex flex-col px-6 py-5 overflow-hidden">
+        <main class="flex-1 bg-[#121212] flex flex-col px-6 py-5 overflow-hidden min-h-0">
             <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-3">
                     <h2 class="text-lg font-semibold">Черга завантажень</h2>
@@ -163,7 +163,7 @@
     </div>
 
     <!-- STATUS BAR -->
-    <footer class="h-11 bg-[#18181b] border-t border-zinc-800 px-5 flex items-center justify-between text-xs text-zinc-400">
+    <footer class="h-8 shrink-0 bg-[#18181b] border-t border-zinc-800 px-5 flex items-center justify-between text-xs text-zinc-400">
         <div class="flex items-center gap-3">
             <span class="flex items-center gap-2 text-green-400"><span class="w-2 h-2 bg-green-400 rounded-full"></span>Готовий</span>
             <span class="text-zinc-500">Версія <span id="app-version">loading...</span></span>
@@ -300,7 +300,7 @@
             }
         }
 
-        window.onload = function() {
+        window.addEventListener('load', () => {
             resetPreview();
 
             document.addEventListener('click', (event) => {
@@ -327,39 +327,47 @@
                     pywebview?.api?.update_setting?.('sequential', settingsState.sequential);
                 });
             }
+        });
 
+        window.addEventListener('pywebviewready', function() {
             if (pywebview?.api?.get_init_data) {
-                pywebview.api.get_init_data().then(data => {
-                    const versionEl = document.getElementById('app-version');
-                    const pathInput = document.getElementById('path-input');
-
-                    const settings = data?.settings || {};
-                    settingsState.root_folder = settings.root_folder || '';
-                    settingsState.mp4 = Boolean(settings.mp4 ?? true);
-                    settingsState.sequential = Boolean(settings.sequential ?? false);
-
-                    if (versionEl) versionEl.textContent = data?.version || '—';
-                    if (pathInput && settingsState.root_folder) pathInput.value = settingsState.root_folder;
-                    if (mp4Toggle) mp4Toggle.checked = settingsState.mp4;
-                    if (queueToggle) queueToggle.checked = settingsState.sequential;
-
-                    const history = Array.isArray(data?.history) ? data.history : [];
-                    history.forEach(item => {
-                        registerTask({
-                            id: item.id,
-                            title: item.title || item.url || item.id,
-                            url: item.url || '',
-                            status: item.status || 'done',
-                            path: item.path || '',
-                            error: item.error || ''
-                        });
-                    });
-                }).catch(() => {
+                pywebview.api.get_init_data().then(initApp).catch((err) => {
+                    console.error(err);
                     const versionEl = document.getElementById('app-version');
                     if (versionEl) versionEl.textContent = '—';
                 });
             }
-        };
+        });
+
+        function initApp(data) {
+            const versionEl = document.getElementById('app-version');
+            if (versionEl) versionEl.textContent = data?.version || '—';
+
+            const mp4Toggle = document.getElementById('chk-mp4');
+            const queueToggle = document.getElementById('chk-queue');
+
+            if (data?.settings) {
+                const folder = data.settings.root_folder;
+                const pathInput = document.getElementById('path-input');
+                const resolvedFolder = folder || 'Default (Downloads)';
+
+                if (pathInput) {
+                    const currentValue = pathInput.value?.trim();
+                    pathInput.value = currentValue && currentValue !== 'Оберіть папку' ? currentValue : resolvedFolder;
+                }
+
+                if (mp4Toggle) mp4Toggle.checked = Boolean(data.settings.mp4);
+                if (queueToggle) queueToggle.checked = Boolean(data.settings.sequential);
+
+                settingsState.root_folder = resolvedFolder;
+                settingsState.mp4 = Boolean(data.settings.mp4);
+                settingsState.sequential = Boolean(data.settings.sequential);
+            }
+
+            if (Array.isArray(data?.history)) {
+                data.history.forEach(task => registerTask(task));
+            }
+        }
 
         function setSearchLoading(isLoading) {
             const btn = document.getElementById('btn-search');

@@ -50,7 +50,9 @@ class Bridge:
         self._lock = threading.Lock()
 
         self.settings = self._load_settings()
-        self.root_folder = Path(self.settings.get("root_folder", self.DEFAULT_ROOT)).expanduser()
+        self.root_folder = (
+            Path(self.settings.get("root_folder", self.DEFAULT_ROOT)).expanduser().resolve()
+        )
         self._ensure_root_folder(self.root_folder)
         self.queue_items = self._load_queue()
 
@@ -60,11 +62,11 @@ class Bridge:
         return {
             "version": __version__,
             "settings": {
-                "root_folder": str(self.root_folder),
+                "root_folder": str(self.root_folder.resolve()),
                 "mp4": bool(self.settings.get("mp4", True)),
                 "sequential": bool(self.settings.get("sequential", False)),
             },
-            "history": [dict(item) for item in self.queue_items],
+            "history": self.queue_items,
         }
 
     def fetch_metadata(self, url: str) -> dict[str, Any]:
@@ -135,17 +137,20 @@ class Bridge:
             return ""
 
         if isinstance(result, (list, tuple)):
-            selected = str(result[0])
+            selected_raw = result[0]
         else:
-            selected = str(result)
+            selected_raw = result
 
-        if selected:
-            self.root_folder = Path(selected).expanduser()
-            self._ensure_root_folder(self.root_folder)
-            self.settings["root_folder"] = str(self.root_folder)
-            self._save_settings()
+        if not selected_raw:
+            return ""
 
-        return selected
+        selected_path = Path(str(selected_raw)).expanduser().resolve()
+        self.root_folder = selected_path
+        self._ensure_root_folder(self.root_folder)
+        self.settings["root_folder"] = str(selected_path)
+        self._save_settings()
+
+        return str(selected_path)
 
     def start_download(
         self,
@@ -164,9 +169,15 @@ class Bridge:
         root_folder = self.root_folder
         separate_folder = False
         convert_to_mp4 = bool(options.get("mp4", self.settings.get("mp4", True)))
+        sequential_download = bool(options.get("sequential", self.settings.get("sequential", False)))
         start_seconds = float(options.get("start_seconds", 0.0) or 0.0)
         end_seconds_value = options.get("end_seconds")
         end_seconds = float(end_seconds_value) if end_seconds_value is not None else None
+
+        self.settings["mp4"] = convert_to_mp4
+        self.settings["sequential"] = sequential_download
+        self.settings["root_folder"] = str(root_folder)
+        self._save_settings()
 
         worker = DownloadWorker(
             task_id=task_id,
