@@ -561,6 +561,7 @@
             const statusEl = document.getElementById('status-' + id);
             if (!card) return;
 
+            card.classList.remove('opacity-50', 'pointer-events-none', 'grayscale');
             card.classList.remove('border-green-500/40', 'border-red-500/40');
             if (statusEl) statusEl.className = 'text-xs text-zinc-500 mt-1';
 
@@ -640,6 +641,10 @@
         }
 
         function cancelTask(id) {
+            const card = document.getElementById('card-' + id);
+            if (card) {
+                card.classList.add('opacity-50', 'pointer-events-none', 'grayscale');
+            }
             pywebview.api.cancel_download(id);
         }
 
@@ -664,6 +669,13 @@
             if (!url) return;
             document.getElementById('url-input').value = url;
             searchVideo();
+        }
+
+        function retryTask(id) {
+            const task = tasks.get(id);
+            if (task?.url) {
+                retrySearch(task.url);
+            }
         }
 
         function createIconButton(iconClass, handler, options = {}) {
@@ -699,8 +711,8 @@
             const actions = [];
 
             if (['downloading', 'converting'].includes(task.status)) {
-                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
                 actions.push(createIconButton('fa-solid fa-xmark', () => cancelTask(task.id), { title: 'Скасувати', extraClasses: 'text-red-400 hover:text-red-300 hover:border-red-400/60' }));
+                actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
             } else if (['error', 'cancelled'].includes(task.status)) {
                 actions.push(createIconButton('fa-solid fa-rotate-right', () => retrySearch(task.url), { title: 'Спробувати ще' }));
                 actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
@@ -709,7 +721,7 @@
                 actions.push(createTextButton('fa-regular fa-folder-open', 'Папка', () => openFolder(task.id), { disabled: !task.path }));
                 actions.push(createIconButton('fa-solid fa-play', () => playFile(task.id), { disabled: !task.path, title: 'Відтворити' }));
                 actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));
-                actions.push(createIconButton('fa-solid fa-rotate-right', () => retrySearch(task.url), { title: 'Спробувати ще' }));
+                actions.push(createIconButton('fa-solid fa-rotate-right', () => retryTask(task.id), { title: 'Спробувати ще' }));
                 actions.push(createIconButton('fa-solid fa-trash-can', () => removeTask(task.id), { title: 'Видалити', extraClasses: 'hover:text-red-400 hover:border-red-400/60' }));
             } else {
                 actions.push(createIconButton('fa-solid fa-link', () => openUrl(task.url), { title: 'Відкрити посилання' }));

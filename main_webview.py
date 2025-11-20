@@ -261,7 +261,7 @@ class Bridge:
         if sys.platform.startswith("win"):
             selection_target = target if target.exists() else folder
             subprocess.Popen(  # noqa: S603
-                ["explorer", f'/select,"{selection_target}"']
+                f'explorer /select,"{selection_target}"'
             )
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(folder)])  # noqa: S603

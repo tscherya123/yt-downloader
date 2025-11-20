@@ -71,6 +71,28 @@ class DownloadWorker(threading.Thread):
             if self.end_seconds is not None and self.end_seconds <= self.start_seconds:
                 raise ValueError(self._t("error_end_before_start"))
 
+            def progress_hook(d: dict[str, object]) -> None:
+                if d.get("status") == "downloading":
+                    try:
+                        p = str(d.get("_percent_str", "0%"))
+                        p = p.replace("%", "")
+                        import re
+
+                        p = re.sub(r"\x1b\[[0-9;]*m", "", p)
+                        progress = float(p)
+                        speed = str(d.get("_speed_str", "N/A"))
+                        speed = re.sub(r"\x1b\[[0-9;]*m", "", speed)
+                        self._emit(
+                            "progress",
+                            progress=progress,
+                            speed=speed,
+                            status="downloading",
+                        )
+                    except Exception:
+                        pass
+                elif d.get("status") == "finished":
+                    self._emit("progress", progress=100, status="converting")
+
             self._initialize_backends()
 
             self._log(self._t("log_root", root=self.root))
@@ -109,6 +131,7 @@ class DownloadWorker(threading.Thread):
                     tempdir=tempdir,
                     clip_start=self.start_seconds if clip_requested else None,
                     clip_end=self.end_seconds if clip_requested else None,
+                    progress_hooks=[progress_hook],
                 )
             except BackendError as exc:
                 raise RuntimeError(str(exc)) from exc
