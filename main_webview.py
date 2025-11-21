@@ -54,8 +54,8 @@ class Bridge:
 
     def __init__(self, window: Optional["webview.Window"] = None) -> None:
         self.window = window
-        self.event_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
-        self.workers: dict[str, DownloadWorker] = {}
+        self._event_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
+        self._workers: dict[str, DownloadWorker] = {}
         self._running = True
         self._monitor_thread = threading.Thread(
             target=self._dispatch_events, daemon=True
@@ -69,7 +69,7 @@ class Bridge:
         # Store paths as strings to avoid pywebview serialization issues
         self.root_folder = str(root_path)
         self.queue_items = self._load_queue()
-        self.waiting_queue: list[dict[str, Any]] = []
+        self._waiting_queue: list[dict[str, Any]] = []
         self.update_status = "checking"
         self.pending_update_info: UpdateInfo | None = None
         self.update_cache_dir = str(CONFIG_DIR / "updates")
@@ -220,11 +220,11 @@ class Bridge:
         }
 
         with self._lock:
-            active_workers = len(self.workers)
+            active_workers = len(self._workers)
 
-        if sequential_download and (active_workers > 0 or self.waiting_queue):
+        if sequential_download and (active_workers > 0 or self._waiting_queue):
             with self._lock:
-                self.waiting_queue.append(worker_args)
+                self._waiting_queue.append(worker_args)
             self._add_queue_item(
                 task_id,
                 url=url,
@@ -257,19 +257,19 @@ class Bridge:
             convert_to_mp4=bool(worker_args.get("convert_to_mp4", True)),
             start_seconds=float(worker_args.get("start_seconds", 0.0) or 0.0),
             end_seconds=worker_args.get("end_seconds"),
-            event_queue=self.event_queue,
+            event_queue=self._event_queue,
             language=DEFAULT_LANGUAGE,
         )
         with self._lock:
-            self.workers[worker.task_id] = worker
+            self._workers[worker.task_id] = worker
         worker.start()
         return worker
 
     def _remove_from_waiting(self, task_id: str) -> bool:
         with self._lock:
-            for index, queued in enumerate(self.waiting_queue):
+            for index, queued in enumerate(self._waiting_queue):
                 if queued.get("task_id") == task_id:
-                    self.waiting_queue.pop(index)
+                    self._waiting_queue.pop(index)
                     return True
         return False
 
@@ -355,10 +355,12 @@ class Bridge:
         """Request cancellation of a running worker."""
 
         with self._lock:
-            worker = self.workers.get(task_id)
+            worker = self._workers.get(task_id)
             if worker is None and self._remove_from_waiting(task_id):
                 self._mark_status(task_id, "cancelled")
-                self.event_queue.put({"task_id": task_id, "type": "finished", "cancelled": True})
+                self._event_queue.put(
+                    {"task_id": task_id, "type": "finished", "cancelled": True}
+                )
                 return {"status": "ok", "task_id": task_id}
         if worker is None:
             return {"status": "error", "error": "Task not found"}
@@ -377,15 +379,15 @@ class Bridge:
 
     def get_queue_stats(self) -> dict[str, int]:
         with self._lock:
-            return {"count": len(self.queue_items), "active": len(self.workers)}
+            return {"count": len(self.queue_items), "active": len(self._workers)}
 
     def clear_all_history(self) -> dict[str, int]:
         return self.get_queue_stats()
 
     def perform_clear(self) -> dict[str, str]:
         with self._lock:
-            workers = list(self.workers.values())
-            self.waiting_queue.clear()
+            workers = list(self._workers.values())
+            self._waiting_queue.clear()
             self.queue_items = []
             self._save_queue()
         for worker in workers:
@@ -418,10 +420,10 @@ class Bridge:
             return
         self._running = False
         with self._lock:
-            workers = list(self.workers.values())
+            workers = list(self._workers.values())
         for worker in workers:
             worker.cancel()
-        self.event_queue.put(None)
+        self._event_queue.put(None)
         for worker in workers:
             worker.join(timeout=1.0)
         if self._monitor_thread.is_alive():
@@ -543,12 +545,12 @@ class Bridge:
 
     def _process_queue(self) -> None:
         with self._lock:
-            if self.workers or not self.waiting_queue:
+            if self._workers or not self._waiting_queue:
                 return
-            next_args = self.waiting_queue.pop(0)
+            next_args = self._waiting_queue.pop(0)
 
         self._mark_status(next_args["task_id"], "downloading", error="")
-        self.event_queue.put(
+        self._event_queue.put(
             {"task_id": next_args["task_id"], "type": "status", "status": "downloading"}
         )
         self._start_worker(next_args)
@@ -556,7 +558,7 @@ class Bridge:
     def _dispatch_events(self) -> None:
         while self._running:
             try:
-                event = self.event_queue.get(timeout=0.2)
+                event = self._event_queue.get(timeout=0.2)
             except queue.Empty:
                 continue
             if event is None:
@@ -565,9 +567,9 @@ class Bridge:
             if event.get("type") == "finished":
                 task_id = str(event.get("task_id", ""))
                 with self._lock:
-                    worker = self.workers.get(task_id)
+                    worker = self._workers.get(task_id)
                     if worker and not worker.is_alive():
-                        self.workers.pop(task_id, None)
+                        self._workers.pop(task_id, None)
 
             self._update_queue_from_event(event)
 

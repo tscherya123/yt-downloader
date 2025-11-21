@@ -81,10 +81,12 @@ def _build_base_options() -> Dict[str, Any]:
 
 
 def _get_js_runtime_opts() -> dict[str, Any]:
+    """Configure yt-dlp to use the bundled QuickJS."""
+
     qjs_path = resolve_executable("qjs.exe")
     if qjs_path:
-        LOGGER.info(f"Using JS runtime: {qjs_path}")
-        return {"js_runtimes": [f"quickjs:{qjs_path}"]}
+        LOGGER.info(f"Found QuickJS at: {qjs_path}")
+        return {"js_runtimes": {"quickjs": {"args": [str(qjs_path)]}}}
 
     LOGGER.warning("JS runtime (qjs.exe) not found!")
     return {}
