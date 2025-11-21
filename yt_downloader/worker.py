@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from .backend import BackendError, download_video, fetch_video_metadata
 from .localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, translate
@@ -335,13 +335,13 @@ class DownloadWorker(threading.Thread):
         mbit = max((headroom + 999_999) // 1_000_000, 4)
         return f"{mbit}M"
 
-    def _ensure_metadata(self) -> dict[str, str]:
-        if self.title:
-            return {"title": self.title}
-
+    def _ensure_metadata(self) -> dict[str, Any]:
         try:
             return fetch_video_metadata(self.url)
-        except BackendError as exc:
+        except Exception as exc:  # noqa: BLE001 - propagated below
+            if self.title:
+                LOGGER.warning("Failed to fetch metadata, using cached title: %s", exc)
+                return {"title": self.title}
             raise RuntimeError(str(exc)) from exc
 
     def _probe_codecs(self, src: Path) -> tuple[str, str]:
