@@ -20,6 +20,8 @@ __all__ = [
     "download_video",
 ]
 
+LOGGER = get_logger("Backend")
+
 
 class BackendError(RuntimeError):
     """Raised when a required backend dependency is unavailable."""
@@ -78,14 +80,49 @@ def _build_base_options() -> Dict[str, Any]:
     }
 
 
+def _setup_runtime_env() -> None:
+    """Ensure bundled ``qjs.exe`` is discoverable at runtime.
+
+    When packaged with PyInstaller, the executable and bundled runtimes live in the
+    same directory. ``yt-dlp`` relies on ``qjs.exe`` being on ``PATH`` to solve the
+    required n-first-party challenge for 4K streams, so we prepend the directory if
+    the binary is present.
+    """
+
+    candidate_dirs = []
+    if getattr(sys, "frozen", False):  # pragma: no cover - PyInstaller specific
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidate_dirs.append(Path(meipass))
+        candidate_dirs.append(Path(sys.executable).parent)
+    else:
+        resolved = resolve_executable("qjs.exe")
+        if resolved:
+            candidate_dirs.append(resolved.parent)
+        candidate_dirs.append(Path(sys.executable).parent)
+
+    seen_paths = set(os.environ.get("PATH", "").split(os.pathsep))
+    for directory in candidate_dirs:
+        qjs_path = directory / "qjs.exe"
+        if not qjs_path.exists():
+            continue
+
+        if str(directory) not in seen_paths:
+            os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
+            LOGGER.info("Injected runtime path: %s", directory)
+        return
+
+    LOGGER.warning("qjs.exe not found; 4K downloads may fail.")
+
+
 def _setup_environment() -> None:
     """Ensure bundled runtimes are discoverable by ``yt-dlp``.
 
-    Adds the folder containing ``qjs.exe`` and ``ffmpeg.exe`` to ``PATH`` so
-    the dependencies are available without global installation.
+    Adds the folder containing ``ffmpeg.exe``/``ffprobe.exe`` to ``PATH`` so the
+    dependencies are available without global installation.
     """
 
-    for tool in ["qjs.exe", "ffmpeg.exe"]:
+    for tool in ["ffmpeg.exe", "ffprobe.exe"]:
         path = resolve_executable(tool)
         if not path:
             continue
@@ -98,6 +135,7 @@ def _setup_environment() -> None:
 def fetch_video_metadata(url: str) -> Dict[str, Any]:
     """Return the metadata for ``url`` using the ``yt_dlp`` Python API."""
 
+    _setup_runtime_env()
     try:
         context = _ensure_yt_dlp()
     except BackendError as exc:
@@ -105,7 +143,15 @@ def fetch_video_metadata(url: str) -> Dict[str, Any]:
             return _fetch_video_metadata_subprocess(url)
         except BackendError as subprocess_exc:
             raise subprocess_exc from exc
-    options = {"skip_download": True, **_build_base_options()}
+    options = {
+        "skip_download": True,
+        **_build_base_options(),
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "tv"],
+            }
+        },
+    }
     with context.YoutubeDL(options) as ydl:
         return ydl.extract_info(url, download=False)
 
@@ -121,6 +167,7 @@ def download_video(
 ) -> Path:
     """Download ``url`` into ``workdir`` and return the resulting file path."""
 
+    _setup_runtime_env()
     _setup_environment()
     context = _ensure_yt_dlp()
     base_options = _build_base_options()
@@ -223,5 +270,4 @@ def _fetch_video_metadata_subprocess(url: str) -> Dict[str, Any]:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise BackendError("Failed to decode yt-dlp output.") from exc
-LOGGER = get_logger("yt_dlp")
 
