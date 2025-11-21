@@ -793,7 +793,7 @@ def main() -> None:
         min_size=(960, 640),
         js_api=bridge,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
         resizable=True,
     )
 
