@@ -43,14 +43,25 @@
         .action-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* STATES */
-        .border-active { border-color: #eab308 !important; animation: pulse-border 2s infinite; }
+        .border-active { border-color: #eab308 !important; animation: pulse-border 2s infinite; box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.35); }
         .border-queued { border-color: #f97316 !important; }
         .card-cancelled { opacity: 0.6; filter: grayscale(100%); }
 
         @keyframes pulse-border {
-            0% { border-color: #a16207; }
-            50% { border-color: #facc15; }
-            100% { border-color: #a16207; }
+            0% { border-color: #a16207; box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.35); }
+            50% { border-color: #facc15; box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
+            100% { border-color: #a16207; box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.35); }
+        }
+
+        @keyframes progress-indeterminate {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
+
+        .progress-indeterminate {
+            background-image: linear-gradient(135deg, rgba(255, 241, 138, 0.25) 25%, rgba(99, 102, 241, 0.5) 25%, rgba(99, 102, 241, 0.5) 50%, rgba(255, 241, 138, 0.25) 50%, rgba(255, 241, 138, 0.25) 75%, rgba(99, 102, 241, 0.5) 75%);
+            background-size: 200% 100%;
+            animation: progress-indeterminate 1.5s linear infinite;
         }
     </style>
 </head>
@@ -620,7 +631,7 @@
                             <div id="actions-${task.id}" class="flex items-center gap-2"></div>
                         </div>
                         <div class="flex justify-between items-center mt-2 text-xs text-zinc-500">
-                            <span id="speed-${task.id}">0%</span>
+                            <span id="speed-${task.id}">Підготовка до завантаження...</span>
                             <span class="font-mono text-indigo-300" id="percent-${task.id}">0%</span>
                         </div>
                     </div>
@@ -637,9 +648,23 @@
             const label = document.getElementById('percent-' + id);
             const speed = document.getElementById('speed-' + id);
             const numeric = Number(percent);
+
+            if (Number.isFinite(numeric) && numeric < 0) {
+                if (bar) {
+                    bar.style.width = '100%';
+                    bar.classList.add('progress-indeterminate');
+                }
+                if (label) label.innerHTML = '<i class="fa-solid fa-hourglass-half"></i>';
+                if (speed) speed.textContent = 'Обробка потоку... (прогрес невідомий)';
+                return;
+            }
+
             const value = Number.isFinite(numeric) ? Math.min(Math.max(numeric, 0), 100) : 0;
 
-            if (bar) bar.style.width = `${value}%`;
+            if (bar) {
+                bar.style.width = `${value}%`;
+                bar.classList.remove('progress-indeterminate');
+            }
             if (label) label.textContent = `${Math.round(value)}%`;
             if (speed) speed.textContent = speedText ?? '';
         }
@@ -655,7 +680,10 @@
             card.classList.remove('card-cancelled', 'opacity-50', 'pointer-events-none', 'grayscale');
             card.classList.remove('border-green-500/40', 'border-red-500/40', 'border-amber-400/50', 'border-active', 'border-queued');
             if (statusEl) statusEl.className = 'text-xs text-zinc-500 mt-1';
-            if (bar) bar.className = PROGRESS_BASE_CLASS;
+            if (bar) {
+                const preserveIndeterminate = bar.classList.contains('progress-indeterminate');
+                bar.className = PROGRESS_BASE_CLASS + (preserveIndeterminate ? ' progress-indeterminate' : '');
+            }
 
             if (task.status === 'done') {
                 updateProgress(id, 100);
