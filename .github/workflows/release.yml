@@ -106,15 +106,22 @@ jobs:
             --icon "yt-dw-logo.ico" `
             --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;." --add-data "web;web"
 
-      - name: Download Deno
+      - name: Download Dependencies (Deno + Solver)
         shell: pwsh
         run: |
-          $url = "https://github.com/denoland/deno/releases/download/v2.5.6/deno-x86_64-pc-windows-msvc.zip"
-          Invoke-WebRequest -Uri $url -OutFile "deno.zip"
+          # 1. Deno
+          $denoUrl = "https://github.com/denoland/deno/releases/download/v2.5.6/deno-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $denoUrl -OutFile "deno.zip"
           Expand-Archive -Path "deno.zip" -DestinationPath "deno_temp" -Force
           
+          # 2. Solver Script
+          $solverUrl = "https://github.com/yt-dlp/ejs/releases/latest/download/yt.solver.lib.min.js"
+          Invoke-WebRequest -Uri $solverUrl -OutFile "yt.solver.lib.min.js"
+
+          # Prepare Bundle
           New-Item -ItemType Directory -Path 'external-bin' -Force | Out-Null
           Copy-Item "deno_temp\deno.exe" -Destination "external-bin\deno.exe" -Force
+          Copy-Item "yt.solver.lib.min.js" -Destination "external-bin\yt.solver.lib.min.js" -Force
 
       - name: Package Windows artifact
         env:
@@ -127,6 +134,7 @@ jobs:
           Copy-Item external-bin\ffprobe.exe release\ffprobe.exe -Force
           # Include deno.exe in the final zip
           Copy-Item external-bin\deno.exe release\deno.exe -Force
+          Copy-Item external-bin\yt.solver.lib.min.js release\yt.solver.lib.min.js -Force
           Compress-Archive -Path release\* -DestinationPath "release\yt-downloader-$env:VERSION-windows.zip" -Force
 
       - name: Commit version bump

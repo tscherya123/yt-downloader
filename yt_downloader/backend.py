@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from .logger import get_logger
-from .utils import resolve_executable
+from .utils import resolve_asset_path, resolve_executable
 
 __all__ = [
     "BackendError",
@@ -81,15 +81,31 @@ def _build_base_options() -> Dict[str, Any]:
 
 
 def _get_js_runtime_opts() -> dict[str, Any]:
-    """Configure yt-dlp to use the bundled Deno."""
+    """Configure yt-dlp to use the bundled Deno and local solver script."""
 
     deno_path = resolve_executable("deno.exe")
-    if deno_path:
-        LOGGER.info(f"Found Deno at: {deno_path}")
-        return {"js_runtimes": {"deno": {"args": [str(deno_path)]}}}
+    solver_path = resolve_asset_path("yt.solver.lib.min.js")
 
-    LOGGER.warning("Deno runtime (deno.exe) not found!")
-    return {}
+    if not solver_path and deno_path:
+        candidate = deno_path.parent / "yt.solver.lib.min.js"
+        if candidate.exists():
+            solver_path = candidate
+
+    if not deno_path:
+        LOGGER.warning("Deno runtime (deno.exe) not found!")
+        return {}
+
+    LOGGER.info("Found Deno at: %s", deno_path)
+    runtime_opts: dict[str, Any] = {"args": [str(deno_path)]}
+
+    if solver_path:
+        LOGGER.info("Found local solver: %s", solver_path)
+        runtime_opts["ejs_path"] = str(solver_path)
+
+    return {
+        "js_runtimes": {"deno": runtime_opts},
+        "remote_components": {"ejs:github"},
+    }
 
 
 def _setup_runtime_env() -> None:
@@ -159,7 +175,6 @@ def fetch_video_metadata(url: str) -> Dict[str, Any]:
         "skip_download": True,
         **_build_base_options(),
         **_get_js_runtime_opts(),
-        "remote_components": {"ejs": "github"},
         "extractor_args": {
             "youtube": {
                 "player_client": ["web", "tv"],
@@ -194,7 +209,6 @@ def download_video(
         },
         "outtmpl": "source.%(ext)s",
         "format": "bestvideo*+bestaudio/best",
-        "remote_components": {"ejs": "github"},
         "format_sort": ["res:2160", "res:1440", "res:1080", "fps", "br"],
         "concurrent_fragment_downloads": 8,
         "hls_prefer_ffmpeg": True,
