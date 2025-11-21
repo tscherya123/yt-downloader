@@ -543,6 +543,8 @@ class Bridge:
 
         try:
             install_update_and_restart(Path(executable))
+            if self.window:
+                self.window.destroy()
         except Exception as exc:  # noqa: BLE001 - surfaced to UI
             self._emit_update_event({"type": "update_error", "error": str(exc)})
 

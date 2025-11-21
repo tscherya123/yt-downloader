@@ -42,8 +42,7 @@ def test_install_update_restarts_application(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
-    with pytest.raises(SystemExit):
-        install_update_and_restart(replacement)
+    install_update_and_restart(replacement)
 
     assert current.read_text() == "new-version"
     assert captured["cmd"][0] == str(current)
