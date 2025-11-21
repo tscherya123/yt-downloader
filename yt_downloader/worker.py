@@ -135,15 +135,24 @@ class DownloadWorker(threading.Thread):
             self._emit("title", title=title)
             self._check_cancelled()
 
-            if self.start_seconds > 0 or self.end_seconds is not None:
+            try:
+                duration = float(meta.get("duration") or 0)
+            except (TypeError, ValueError):
+                duration = 0.0
+
+            is_start_zero = self.start_seconds < 0.5
+            is_end_full = self.end_seconds is None or (
+                duration > 0 and self.end_seconds >= duration - 0.5
+            )
+            clip_requested = not (is_start_zero and is_end_full)
+
+            if clip_requested:
                 human_start = format_timestamp(self.start_seconds)
                 if self.end_seconds is not None:
                     human_end = format_timestamp(self.end_seconds)
                 else:
                     human_end = self._t("segment_end")
                 self._log(self._t("log_segment", start=human_start, end=human_end))
-
-            clip_requested = self.start_seconds > 0 or self.end_seconds is not None
             self._log(self._t("log_download_step"))
             try:
                 src = download_video(
@@ -189,10 +198,7 @@ class DownloadWorker(threading.Thread):
             else:
                 self._status("converting")
                 ffmpeg_args = [self._ffmpeg(), "-hide_banner", "-stats", "-y"]
-                clip_during_ffmpeg = (
-                    (self.start_seconds > 0 or self.end_seconds is not None)
-                    and not clip_applied_during_download
-                )
+                clip_during_ffmpeg = clip_requested and not clip_applied_during_download
                 if clip_during_ffmpeg:
                     ffmpeg_args.extend(["-ss", format_timestamp(self.start_seconds)])
                 ffmpeg_args.extend(["-i", str(src)])
