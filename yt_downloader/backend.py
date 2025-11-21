@@ -159,6 +159,7 @@ def fetch_video_metadata(url: str) -> Dict[str, Any]:
         "skip_download": True,
         **_build_base_options(),
         **_get_js_runtime_opts(),
+        "remote_components": {"ejs": "github"},
         "extractor_args": {
             "youtube": {
                 "player_client": ["web", "tv"],
@@ -193,6 +194,7 @@ def download_video(
         },
         "outtmpl": "source.%(ext)s",
         "format": "bestvideo*+bestaudio/best",
+        "remote_components": {"ejs": "github"},
         "format_sort": ["res:2160", "res:1440", "res:1080", "fps", "br"],
         "concurrent_fragment_downloads": 8,
         "hls_prefer_ffmpeg": True,
