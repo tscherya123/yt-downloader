@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -13,43 +11,8 @@ def _is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
-def _launch_detached(executable: Path) -> None:
-    # 1. Формуємо безпечні шляхи (у лапках)
-    exe_path = f'"{str(executable)}"'
-    # Передаємо всі аргументи запуску далі
-    args = " ".join(f'"{arg}"' for arg in sys.argv[1:])
-
-    # 2. Команда "Трамплін":
-    # - timeout /t 3: чекаємо 3 секунди (старий процес вмирає)
-    # - start "": запускаємо новий процес незалежно
-    cmd_command = f'timeout /t 3 /nobreak > NUL & start "" {exe_path} {args}'
-
-    # 3. Налаштування процесу
-    popen_kwargs: dict[str, object] = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "close_fds": True,
-        "shell": True,
-        # ВАЖЛИВО: Змінюємо робочу папку на папку з exe-файлом.
-        # Це запобігає блокуванню папки _MEI старого процесу.
-        "cwd": str(executable.parent),
-    }
-
-    if os.name == "nt":  # pragma: no cover - platform specific
-        creation_flags = (
-            getattr(subprocess, "DETACHED_PROCESS", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        )
-        popen_kwargs["creationflags"] = creation_flags
-
-    # Запускаємо cmd-обгортку
-    subprocess.Popen(f'cmd /c "{cmd_command}"', **popen_kwargs)
-
-
-def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> None:
-    """Replace the current executable with ``downloaded_asset`` and restart."""
+def apply_update_files(downloaded_asset: Path) -> bool:
+    """Replace the current executable with ``downloaded_asset`` without restarting."""
 
     if not downloaded_asset.exists():
         raise FileNotFoundError(downloaded_asset)
@@ -61,10 +24,7 @@ def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> 
     new_executable = downloaded_asset.resolve()
 
     if new_executable == current_executable:
-        if restart:
-            _launch_detached(current_executable)
-            return
-        return
+        return True
 
     backup = current_executable.with_suffix(current_executable.suffix + ".old")
     try:
@@ -72,25 +32,15 @@ def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> 
     except OSError:
         pass
 
-    local_update = current_executable.with_suffix(".exe.new")
-    shutil.copy2(new_executable, local_update)
-
-    try:
-        local_update.chmod(0o755)
-    except OSError:
-        pass
-
     current_executable.replace(backup)
-    local_update.replace(current_executable)
+    shutil.copy2(new_executable, current_executable)
 
     try:
         current_executable.chmod(0o755)
     except OSError:
         pass
 
-    if restart:
-        _launch_detached(current_executable)
-        return
+    return True
 
 
 def cleanup_old_versions() -> None:
@@ -107,4 +57,4 @@ def cleanup_old_versions() -> None:
             continue
 
 
-__all__ = ["cleanup_old_versions", "install_update_and_restart"]
+__all__ = ["apply_update_files", "cleanup_old_versions"]
