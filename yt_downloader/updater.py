@@ -14,17 +14,26 @@ def _is_frozen() -> bool:
 
 
 def _launch_detached(executable: Path) -> None:
+    # 1. Формуємо безпечні шляхи (у лапках)
     exe_path = f'"{str(executable)}"'
+    # Передаємо всі аргументи запуску далі
     args = " ".join(f'"{arg}"' for arg in sys.argv[1:])
 
-    cmd_command = f"timeout /t 3 /nobreak > NUL & start \"\" {exe_path} {args}"
+    # 2. Команда "Трамплін":
+    # - timeout /t 3: чекаємо 3 секунди (старий процес вмирає)
+    # - start "": запускаємо новий процес незалежно
+    cmd_command = f'timeout /t 3 /nobreak > NUL & start "" {exe_path} {args}'
 
+    # 3. Налаштування процесу
     popen_kwargs: dict[str, object] = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "close_fds": True,
         "shell": True,
+        # ВАЖЛИВО: Змінюємо робочу папку на папку з exe-файлом.
+        # Це запобігає блокуванню папки _MEI старого процесу.
+        "cwd": str(executable.parent),
     }
 
     if os.name == "nt":  # pragma: no cover - platform specific
@@ -35,6 +44,7 @@ def _launch_detached(executable: Path) -> None:
         )
         popen_kwargs["creationflags"] = creation_flags
 
+    # Запускаємо cmd-обгортку
     subprocess.Popen(f'cmd /c "{cmd_command}"', **popen_kwargs)
 
 
