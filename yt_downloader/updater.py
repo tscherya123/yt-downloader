@@ -50,7 +50,7 @@ def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> 
     if new_executable == current_executable:
         if restart:
             _launch_detached(current_executable)
-            sys.exit(0)
+            return
         return
 
     backup = current_executable.with_suffix(current_executable.suffix + ".old")
@@ -77,7 +77,7 @@ def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> 
 
     if restart:
         _launch_detached(current_executable)
-        sys.exit(0)
+        return
 
 
 def cleanup_old_versions() -> None:
