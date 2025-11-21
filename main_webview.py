@@ -24,7 +24,7 @@ import webview
 from yt_downloader.backend import fetch_video_metadata
 from yt_downloader.logger import setup_logging
 from yt_downloader.localization import DEFAULT_LANGUAGE
-from yt_downloader.updater import cleanup_old_versions, install_update_and_restart
+from yt_downloader.updater import apply_update_files, cleanup_old_versions
 from yt_downloader.updates import (
     UpdateError,
     UpdateInfo,
@@ -572,9 +572,11 @@ class Bridge:
         )
 
         try:
-            install_update_and_restart(Path(executable))
-            if self.window:
-                self.window.destroy()
+            apply_update_files(Path(executable))
+            self.update_status = "manual_restart_required"
+            self._emit_update_event(
+                {"type": "update_manual_restart_required", "version": install_result.version}
+            )
         except Exception as exc:  # noqa: BLE001 - surfaced to UI
             self._emit_update_event({"type": "update_error", "error": str(exc)})
 

@@ -233,19 +233,19 @@
                         <i class="fa-solid fa-rotate"></i>
                     </div>
                     <div>
-                        <h3 class="text-lg font-semibold">Оновлення...</h3>
+                        <h3 id="update-overlay-title" class="text-lg font-semibold">Оновлення...</h3>
                         <p id="update-status-text" class="text-sm text-zinc-400">Завантаження...</p>
                     </div>
                 </div>
-                <div class="w-full h-3 bg-[#1f1f24] rounded-full overflow-hidden border border-zinc-800">
+                <div id="update-progress-container" class="w-full h-3 bg-[#1f1f24] rounded-full overflow-hidden border border-zinc-800">
                     <div id="update-progress-bar" class="h-full bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-400 progress-shimmer transition-all duration-300" style="width: 0%;"></div>
                 </div>
-                <div class="flex items-center justify-between text-sm text-zinc-400">
+                <div id="update-progress-row" class="flex items-center justify-between text-sm text-zinc-400">
                     <span>Прогрес</span>
                     <span id="update-progress-label">0%</span>
                 </div>
                 <div class="flex items-center justify-end gap-2">
-                    <button id="update-restart-btn" class="hidden px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold" onclick="restartManually()">Перезапустити</button>
+                    <button id="update-close-btn" class="hidden px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold" onclick="restartManually()">Закрити програму</button>
                 </div>
             </div>
         </div>
@@ -776,6 +776,11 @@
                 setUpdateStatusText('Завершення...');
                 return;
             }
+            if (event.type === 'update_manual_restart_required') {
+                setFooterReady();
+                showManualRestartOverlay();
+                return;
+            }
             if (event.type === 'update_error') {
                 hideUpdateOverlay();
                 setFooterReady();
@@ -876,7 +881,15 @@
         function showUpdateOverlay(stage = 'download') {
             const overlay = document.getElementById('update-overlay');
             overlay?.classList.remove('hidden');
+            setUpdateOverlayTitle('Оновлення...');
+            toggleUpdateProgressVisibility(true);
+            toggleUpdateCloseButton(false);
             setUpdateStatusText(stage === 'install' ? 'Розпаковка...' : 'Завантаження...');
+        }
+
+        function setUpdateOverlayTitle(text) {
+            const title = document.getElementById('update-overlay-title');
+            if (title) title.textContent = text;
         }
 
         function hideUpdateOverlay() {
@@ -895,6 +908,26 @@
             const percent = Math.max(0, Math.min(100, Number(value) || 0));
             if (bar) bar.style.width = `${percent}%`;
             if (label) label.textContent = `${percent}%`;
+        }
+
+        function toggleUpdateProgressVisibility(visible) {
+            const container = document.getElementById('update-progress-container');
+            const row = document.getElementById('update-progress-row');
+            container?.classList.toggle('hidden', !visible);
+            row?.classList.toggle('hidden', !visible);
+        }
+
+        function toggleUpdateCloseButton(visible) {
+            const btn = document.getElementById('update-close-btn');
+            btn?.classList.toggle('hidden', !visible);
+        }
+
+        function showManualRestartOverlay() {
+            showUpdateOverlay('install');
+            setUpdateOverlayTitle('Оновлення встановлено!');
+            setUpdateStatusText('Будь ласка, закрийте програму, щоб завершити оновлення.');
+            toggleUpdateProgressVisibility(false);
+            toggleUpdateCloseButton(true);
         }
 
         function restartManually() {
