@@ -80,6 +80,16 @@ def _build_base_options() -> Dict[str, Any]:
     }
 
 
+def _get_js_runtime_opts() -> dict[str, Any]:
+    qjs_path = resolve_executable("qjs.exe")
+    if qjs_path:
+        LOGGER.info(f"Using JS runtime: {qjs_path}")
+        return {"js_runtimes": [f"quickjs:{qjs_path}"]}
+
+    LOGGER.warning("JS runtime (qjs.exe) not found!")
+    return {}
+
+
 def _setup_runtime_env() -> None:
     """Ensure bundled ``qjs.exe`` is discoverable at runtime.
 
@@ -146,6 +156,7 @@ def fetch_video_metadata(url: str) -> Dict[str, Any]:
     options = {
         "skip_download": True,
         **_build_base_options(),
+        **_get_js_runtime_opts(),
         "extractor_args": {
             "youtube": {
                 "player_client": ["web", "tv"],
@@ -173,6 +184,7 @@ def download_video(
     base_options = _build_base_options()
     options: Dict[str, Any] = {
         **base_options,
+        **_get_js_runtime_opts(),
         "paths": {
             "home": str(workdir),
             "temp": str(tempdir),
