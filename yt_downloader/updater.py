@@ -14,12 +14,17 @@ def _is_frozen() -> bool:
 
 
 def _launch_detached(executable: Path) -> None:
-    args = [str(executable), *sys.argv[1:]]
+    exe_path = f'"{str(executable)}"'
+    args = " ".join(f'"{arg}"' for arg in sys.argv[1:])
+
+    cmd_command = f"timeout /t 3 /nobreak > NUL & start \"\" {exe_path} {args}"
+
     popen_kwargs: dict[str, object] = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "close_fds": True,
+        "shell": True,
     }
 
     if os.name == "nt":  # pragma: no cover - platform specific
@@ -29,10 +34,8 @@ def _launch_detached(executable: Path) -> None:
             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
         popen_kwargs["creationflags"] = creation_flags
-    else:  # pragma: no cover - platform specific
-        popen_kwargs["start_new_session"] = True
 
-    subprocess.Popen(args, **popen_kwargs)
+    subprocess.Popen(f'cmd /c "{cmd_command}"', **popen_kwargs)
 
 
 def install_update_and_restart(downloaded_asset: Path, restart: bool = True) -> None:

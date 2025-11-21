@@ -45,12 +45,16 @@ def test_install_update_restarts_application(monkeypatch, tmp_path) -> None:
     install_update_and_restart(replacement)
 
     assert current.read_text() == "new-version"
-    assert captured["cmd"][0] == str(current)
+    cmd = captured["cmd"]
+    assert isinstance(cmd, str)
+    assert "timeout /t 3 /nobreak > NUL" in cmd
+    assert str(current) in cmd
     kwargs = captured["kwargs"]
     assert kwargs["stdin"] is subprocess.DEVNULL
     assert kwargs["stdout"] is subprocess.DEVNULL
     assert kwargs["stderr"] is subprocess.DEVNULL
     assert kwargs["close_fds"] is True
+    assert kwargs["shell"] is True
 
 
 def test_cleanup_old_versions_removes_backups(monkeypatch, tmp_path) -> None:
