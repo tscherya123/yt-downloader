@@ -793,7 +793,8 @@ def main() -> None:
         min_size=(960, 640),
         js_api=bridge,
         frameless=True,
-        easy_drag=False,
+        easy_drag=True,
+        resizable=True,
     )
 
     # 3. Attach created window back to bridge
