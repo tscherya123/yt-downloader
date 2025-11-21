@@ -43,25 +43,31 @@
         .action-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* STATES */
-        .border-active { border-color: #eab308 !important; animation: pulse-border 2s infinite; box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.35); }
+        .border-active { border-color: #facc15 !important; animation: pulse-border 2s infinite; box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.4); }
         .border-queued { border-color: #f97316 !important; }
         .card-cancelled { opacity: 0.6; filter: grayscale(100%); }
 
         @keyframes pulse-border {
-            0% { border-color: #a16207; box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.35); }
-            50% { border-color: #facc15; box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
-            100% { border-color: #a16207; box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.35); }
+            0% { border-color: #d97706; box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35), 0 0 0 0 rgba(250, 204, 21, 0.2); }
+            50% { border-color: #facc15; box-shadow: 0 0 0 8px rgba(250, 204, 21, 0.15), 0 0 20px 12px rgba(250, 204, 21, 0.25); }
+            100% { border-color: #d97706; box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35), 0 0 0 0 rgba(250, 204, 21, 0.2); }
         }
 
         @keyframes progress-indeterminate {
-            0% { background-position: 0% 50%; }
-            100% { background-position: 200% 50%; }
+            0% { background-position: 0 0; }
+            100% { background-position: 40px 0; }
         }
 
         .progress-indeterminate {
-            background-image: linear-gradient(135deg, rgba(255, 241, 138, 0.25) 25%, rgba(99, 102, 241, 0.5) 25%, rgba(99, 102, 241, 0.5) 50%, rgba(255, 241, 138, 0.25) 50%, rgba(255, 241, 138, 0.25) 75%, rgba(99, 102, 241, 0.5) 75%);
-            background-size: 200% 100%;
-            animation: progress-indeterminate 1.5s linear infinite;
+            background-image: repeating-linear-gradient(
+                135deg,
+                rgba(255, 241, 138, 0.35),
+                rgba(255, 241, 138, 0.35) 12px,
+                rgba(99, 102, 241, 0.55) 12px,
+                rgba(99, 102, 241, 0.55) 24px
+            );
+            background-size: 40px 40px;
+            animation: progress-indeterminate 1.2s linear infinite;
         }
     </style>
 </head>
@@ -654,8 +660,8 @@
                     bar.style.width = '100%';
                     bar.classList.add('progress-indeterminate');
                 }
-                if (label) label.innerHTML = '<i class="fa-solid fa-hourglass-half"></i>';
-                if (speed) speed.textContent = 'Обробка потоку... (прогрес невідомий)';
+                if (label) label.classList.add('hidden');
+                if (speed) speed.textContent = 'Обробка фрагмента... (очікуйте)';
                 return;
             }
 
@@ -665,7 +671,10 @@
                 bar.style.width = `${value}%`;
                 bar.classList.remove('progress-indeterminate');
             }
-            if (label) label.textContent = `${Math.round(value)}%`;
+            if (label) {
+                label.classList.remove('hidden');
+                label.textContent = `${Math.round(value)}%`;
+            }
             if (speed) speed.textContent = speedText ?? '';
         }
 
