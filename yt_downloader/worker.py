@@ -85,16 +85,7 @@ class DownloadWorker(threading.Thread):
                         if total > 0:
                             progress_value = (downloaded / total) * 100
                     except (TypeError, ValueError):
-                        progress_value = 0.0
-
-                    if progress_value < 0:
-                        try:
-                            fragment_index = float(d.get("fragment_index") or 0)
-                            fragment_count = float(d.get("fragment_count") or 0)
-                            if fragment_index > 0 and fragment_count > 0:
-                                progress_value = min((fragment_index / fragment_count) * 100, 100.0)
-                        except (TypeError, ValueError):
-                            progress_value = 0.0
+                        progress_value = -1.0
 
                     speed_display = "-"
                     speed_value = d.get("speed")
