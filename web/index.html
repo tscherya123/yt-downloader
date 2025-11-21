@@ -73,7 +73,7 @@
 </head>
 <body class="h-screen flex flex-col overflow-hidden border border-zinc-800 rounded-2xl">
     <!-- TITLE BAR -->
-    <div class="h-11 bg-[#1a1a1f] border-b border-zinc-800 flex items-center justify-between px-4 drag-handle pywebview-drag-region">
+    <div id="title-bar" class="h-11 bg-[#1a1a1f] border-b border-zinc-800 flex items-center justify-between px-4">
         <div class="flex items-center gap-2 text-sm text-zinc-200">
             <i class="fa-solid fa-cloud-arrow-down text-indigo-500"></i>
             <span class="font-semibold">Video Downloader</span>
@@ -418,6 +418,14 @@
         function initApp(data) {
             const versionEl = document.getElementById('app-version');
             if (versionEl) versionEl.textContent = data?.version || '—';
+
+            const titleBar = document.getElementById('title-bar');
+            if (titleBar) {
+                setTimeout(() => {
+                    titleBar.classList.add('drag-handle');
+                    titleBar.classList.add('pywebview-drag-region');
+                }, 500);
+            }
 
             const mp4Toggle = document.getElementById('chk-mp4');
             const queueToggle = document.getElementById('chk-queue');
