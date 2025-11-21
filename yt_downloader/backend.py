@@ -211,7 +211,7 @@ def download_video(
         "format": "bestvideo*+bestaudio/best",
         "format_sort": ["res:2160", "res:1440", "res:1080", "fps", "br"],
         "concurrent_fragment_downloads": 8,
-        "hls_prefer_ffmpeg": True,
+        "hls_prefer_ffmpeg": False,
         "noprogress": True,
         "extractor_args": {
             "youtube": {
