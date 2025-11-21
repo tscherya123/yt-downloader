@@ -78,7 +78,7 @@ class DownloadWorker(threading.Thread):
 
             def progress_hook(d: dict[str, object]) -> None:
                 if d.get("status") == "downloading":
-                    progress_value = 0.0
+                    progress_value = -1.0
                     try:
                         downloaded = float(d.get("downloaded_bytes") or 0)
                         total = float(d.get("total_bytes") or d.get("total_bytes_estimate") or 0)
@@ -87,7 +87,7 @@ class DownloadWorker(threading.Thread):
                     except (TypeError, ValueError):
                         progress_value = 0.0
 
-                    if progress_value <= 0:
+                    if progress_value < 0:
                         try:
                             fragment_index = float(d.get("fragment_index") or 0)
                             fragment_count = float(d.get("fragment_count") or 0)
