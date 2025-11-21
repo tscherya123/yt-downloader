@@ -106,15 +106,15 @@ jobs:
             --icon "yt-dw-logo.ico" `
             --add-data "yt-dw-logo.ico;." --add-data "yt-dw-logo.png;." --add-data "web;web"
 
-      - name: Download QuickJS
+      - name: Download Deno
         shell: pwsh
         run: |
-          # Create external-bin directory
+          $url = "https://github.com/denoland/deno/releases/download/v2.5.6/deno-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile "deno.zip"
+          Expand-Archive -Path "deno.zip" -DestinationPath "deno_temp" -Force
+          
           New-Item -ItemType Directory -Path 'external-bin' -Force | Out-Null
-
-          # Download qjs.exe directly from the user-provided link
-          $url = "https://github.com/quickjs-ng/quickjs/releases/download/v0.11.0/qjs-windows-x86_64.exe"
-          Invoke-WebRequest -Uri $url -OutFile "external-bin\qjs.exe"
+          Copy-Item "deno_temp\deno.exe" -Destination "external-bin\deno.exe" -Force
 
       - name: Package Windows artifact
         env:
@@ -125,8 +125,8 @@ jobs:
           Copy-Item dist\yt-downloader.exe release\yt-downloader.exe -Force
           Copy-Item external-bin\ffmpeg.exe release\ffmpeg.exe -Force
           Copy-Item external-bin\ffprobe.exe release\ffprobe.exe -Force
-          # Include qjs.exe in the final zip
-          Copy-Item external-bin\qjs.exe release\qjs.exe -Force
+          # Include deno.exe in the final zip
+          Copy-Item external-bin\deno.exe release\deno.exe -Force
           Compress-Archive -Path release\* -DestinationPath "release\yt-downloader-$env:VERSION-windows.zip" -Force
 
       - name: Commit version bump

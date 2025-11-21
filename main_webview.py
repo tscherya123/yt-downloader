@@ -75,6 +75,20 @@ class Bridge:
         self.update_cache_dir = str(CONFIG_DIR / "updates")
         cleanup_old_versions()
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Hide non-serializable internals from potential inspection/serialization."""
+
+        state = self.__dict__.copy()
+        for key in [
+            "_event_queue",
+            "_monitor_thread",
+            "_workers",
+            "_waiting_queue",
+            "_lock",
+        ]:
+            state.pop(key, None)
+        return state
+
     def get_init_data(self) -> dict[str, Any]:
         """Return static data used to initialize the UI."""
 

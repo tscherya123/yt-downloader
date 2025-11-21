@@ -81,22 +81,22 @@ def _build_base_options() -> Dict[str, Any]:
 
 
 def _get_js_runtime_opts() -> dict[str, Any]:
-    """Configure yt-dlp to use the bundled QuickJS."""
+    """Configure yt-dlp to use the bundled Deno."""
 
-    qjs_path = resolve_executable("qjs.exe")
-    if qjs_path:
-        LOGGER.info(f"Found QuickJS at: {qjs_path}")
-        return {"js_runtimes": {"quickjs": {"args": [str(qjs_path)]}}}
+    deno_path = resolve_executable("deno.exe")
+    if deno_path:
+        LOGGER.info(f"Found Deno at: {deno_path}")
+        return {"js_runtimes": {"deno": {"args": [str(deno_path)]}}}
 
-    LOGGER.warning("JS runtime (qjs.exe) not found!")
+    LOGGER.warning("Deno runtime (deno.exe) not found!")
     return {}
 
 
 def _setup_runtime_env() -> None:
-    """Ensure bundled ``qjs.exe`` is discoverable at runtime.
+    """Ensure bundled ``deno.exe`` is discoverable at runtime.
 
     When packaged with PyInstaller, the executable and bundled runtimes live in the
-    same directory. ``yt-dlp`` relies on ``qjs.exe`` being on ``PATH`` to solve the
+    same directory. ``yt-dlp`` relies on a JS runtime being on ``PATH`` to solve the
     required n-first-party challenge for 4K streams, so we prepend the directory if
     the binary is present.
     """
@@ -108,15 +108,15 @@ def _setup_runtime_env() -> None:
             candidate_dirs.append(Path(meipass))
         candidate_dirs.append(Path(sys.executable).parent)
     else:
-        resolved = resolve_executable("qjs.exe")
+        resolved = resolve_executable("deno.exe")
         if resolved:
             candidate_dirs.append(resolved.parent)
         candidate_dirs.append(Path(sys.executable).parent)
 
     seen_paths = set(os.environ.get("PATH", "").split(os.pathsep))
     for directory in candidate_dirs:
-        qjs_path = directory / "qjs.exe"
-        if not qjs_path.exists():
+        deno_path = directory / "deno.exe"
+        if not deno_path.exists():
             continue
 
         if str(directory) not in seen_paths:
@@ -124,7 +124,7 @@ def _setup_runtime_env() -> None:
             LOGGER.info("Injected runtime path: %s", directory)
         return
 
-    LOGGER.warning("qjs.exe not found; 4K downloads may fail.")
+    LOGGER.warning("deno.exe not found; 4K downloads may fail.")
 
 
 def _setup_environment() -> None:
@@ -201,7 +201,7 @@ def download_video(
         "noprogress": True,
         "extractor_args": {
             "youtube": {
-                # "web" client supports 4K and works with QuickJS
+                # "web" client supports 4K and works with Deno
                 "player_client": ["web", "tv"],
             }
         },
