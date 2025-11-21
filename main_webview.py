@@ -118,6 +118,35 @@ class Bridge:
 
         try:
             meta = fetch_video_metadata(url)
+            height_raw = meta.get("height")
+            try:
+                height = int(height_raw) if height_raw is not None else 0
+            except (TypeError, ValueError):
+                height = 0
+
+            if height <= 0:
+                formats = meta.get("formats") or []
+                if isinstance(formats, list) and formats:
+                    last_format = formats[-1] or {}
+                    height_raw = last_format.get("height")
+                    try:
+                        height = int(height_raw) if height_raw is not None else 0
+                    except (TypeError, ValueError):
+                        height = 0
+
+            if height >= 2160:
+                quality_label = "4K"
+            elif height >= 1440:
+                quality_label = "2K"
+            elif height >= 1080:
+                quality_label = "FullHD"
+            elif height >= 720:
+                quality_label = "HD"
+            elif height > 0:
+                quality_label = "SD"
+            else:
+                quality_label = "Video"
+
             duration_raw = meta.get("duration") or 0
             try:
                 duration_seconds = int(float(duration_raw))
@@ -130,6 +159,7 @@ class Bridge:
                 "duration": duration_seconds,
                 "duration_str": format_timestamp(duration_seconds) if duration_seconds else "00:00",
                 "thumbnail": meta.get("thumbnail"),
+                "quality": quality_label,
             }
         except Exception as exc:  # noqa: BLE001 - surfaced to UI
             return {"status": "error", "error": str(exc)}

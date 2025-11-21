@@ -173,7 +173,7 @@
                                 <i class="fa-brands fa-youtube text-red-400"></i>
                                 <span>Підтримується</span>
                             </div>
-                            <span class="text-xs text-indigo-300">HD</span>
+                            <span id="preview-quality" class="text-xs text-indigo-300">--</span>
                         </div>
                     </div>
                 </div>
@@ -486,11 +486,13 @@
             const durationEl = document.getElementById('preview-duration');
             const endEl = document.getElementById('time-end-label');
             const thumb = document.getElementById('preview-thumb');
+            const qualityEl = document.getElementById('preview-quality');
 
             if (titleEl) titleEl.textContent = '';
             if (durationEl) durationEl.textContent = '--:--';
             if (endEl) endEl.textContent = '--:--';
             if (thumb) thumb.src = '';
+            if (qualityEl) qualityEl.textContent = '--';
 
             if (trimSlider) trimSlider.reset();
             setDownloadButtonDisabled(true);
@@ -538,12 +540,14 @@
             const durationEl = document.getElementById('preview-duration');
             const endEl = document.getElementById('time-end-label');
             const thumb = document.getElementById('preview-thumb');
+            const qualityEl = document.getElementById('preview-quality');
             const durationSeconds = Number(meta.duration) || 0;
 
             if (titleEl) titleEl.textContent = meta.title || 'Без назви';
             if (durationEl) durationEl.textContent = meta.duration_str || '00:00';
             if (endEl) endEl.textContent = meta.duration_str || formatTime(durationSeconds);
             if (thumb) thumb.src = meta.thumbnail || '';
+            if (qualityEl) qualityEl.textContent = meta.quality || 'HD';
 
             if (trimSlider) trimSlider.init(durationSeconds);
         }
